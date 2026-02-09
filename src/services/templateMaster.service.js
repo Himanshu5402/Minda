@@ -683,7 +683,22 @@ export const getTemplateStatusListService = async (
       }
     }
 
-    const filteredApprovals = workflowApprovals.filter((wa) => wa.template_id === item.template_id && wa.user_id === item.user_id && wa.submission_id === item._id);
+    const filteredApprovals = workflowApprovals
+  .filter((wa) => 
+    wa.template_id === item.template_id && 
+    wa.user_id === item.user_id && 
+    wa.submission_id === item._id
+  )
+  .map((approval) => {
+    const approvalJson = approval.toJSON ? approval.toJSON() : approval;
+    
+    // Add approved_by user details
+    if (approvalJson.approved_by) {
+      approvalJson.approved_by_user = approvedByUserMap.get(approvalJson.approved_by) || null;
+    }
+    
+    return approvalJson;
+  });
 
     return {
       ...item.dataValues,
