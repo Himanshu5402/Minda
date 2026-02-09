@@ -605,7 +605,7 @@ export const getTemplateStatusListService = async (
       }
     }
 
-    const key = `${approvalJson.template_id}-${approvalJson.workflow_id}-${approvalJson.approved_by}-${approvalJson.user_id}`;
+    const key = `${approvalJson.template_id}-${approvalJson.workflow_id}-${approvalJson.approved_by}-${approvalJson.user_id}-${approvalJson.submission_id}`;
     if (!approvalMap.has(key)) {
       approvalMap.set(key, []);
     }
@@ -622,6 +622,7 @@ export const getTemplateStatusListService = async (
 
   // Build final response
   return SubmitionData.map((item) => {
+
     const template = templateMap.get(item.template_id);
     const currentUser = userMap.get(item.user_id);
 
@@ -664,7 +665,9 @@ export const getTemplateStatusListService = async (
             expectedApproverUserId = matchedUser?.user_id || null;
           }
 
-          const approvalKey = `${template._id}-${template.workflow_id}-${expectedApproverUserId}-${item.user_id}`;
+          
+
+          const approvalKey = `${template._id}-${template.workflow_id}-${expectedApproverUserId}-${item.user_id}-${item._id}`;
           const stageApprovals = approvalMap.get(approvalKey) || [];
 
           return {
@@ -680,12 +683,15 @@ export const getTemplateStatusListService = async (
       }
     }
 
+    const filteredApprovals = workflowApprovals.filter((wa) => wa.template_id === item.template_id && wa.user_id === item.user_id && wa.submission_id === item._id);
+
     return {
       ...item.dataValues,
       template_data: template ? {
         ...template,
         workflow: workflowWithApprovals,
       } : null,
+      approval:filteredApprovals
     };
   });
 };
