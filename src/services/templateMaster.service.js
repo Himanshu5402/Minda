@@ -691,7 +691,8 @@ export const getTemplateStatusListService = async (
         ...template,
         workflow: workflowWithApprovals,
       } : null,
-      approval:filteredApprovals
+      approval:filteredApprovals,
+      status:"in-progress"
     };
   });
 };
