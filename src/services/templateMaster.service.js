@@ -692,7 +692,7 @@ export const getTemplateStatusListService = async (
         workflow: workflowWithApprovals,
       } : null,
       approval:filteredApprovals,
-      status:"in-progress"
+      template_status:workflowWithApprovals?.workflow.length > 0 ? (filteredApprovals.filter((it) => it.current_stage === workflowWithApprovals?.workflow.length - 1).length > 0 ? "approved" : "in-progress") : "pending"
     };
   });
 };
