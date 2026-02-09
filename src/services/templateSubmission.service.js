@@ -93,7 +93,7 @@ export const getTemplateSubmissionService = async (submissionId) => {
 };
 
 export const getUserTemplateSubmissionsService = async (userId, templateId = null,plant_id = null) => {
-  const where = { user_id: userId, plant_id }
+  const where = { user_id: userId, plant_id,process_approved:false };
   if (templateId) {
     where.template_id = templateId;
   }
