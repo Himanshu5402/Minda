@@ -24,9 +24,9 @@ export const createStatusHistory = AsyncHandler(async (req, res) => {
 
     if (check?.workflow?.workflow?.length - 1 === check?.current_stage && check?.status === "approved") {
         await updateAssignedUserStatusService(check?.template_id, { user_id: check?.user_id, status: "completed" })
-         await TemplateSubmissionModel.update({ process_approved: true },
+        await TemplateSubmissionModel.update({ process_approved: true },
             {
-                where:{ _id:  result?.dataValues?.submission_id}
+                where: { _id: result?.dataValues?.submission_id }
             }
         );
     }
@@ -53,7 +53,7 @@ export const createStatusHistory = AsyncHandler(async (req, res) => {
         await updateAssignedUserStatusService(check?.template_id, { user_id: check?.user_id, status: "rejected" })
         await TemplateSubmissionModel.update({ process_approved: true },
             {
-                where:{ _id:  result?.dataValues?.submission_id}
+                where: { _id: result?.dataValues?.submission_id }
             }
         );
     }

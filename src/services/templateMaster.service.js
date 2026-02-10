@@ -119,6 +119,7 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
     include: [templateFieldsInclude, workflowInclude],
   })
 
+
   if (!result) {
     throw new NotFoundError('Template not found', 'getTemplateByIdService()')
   }
@@ -169,7 +170,10 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
     return field
   }));
 
-
+  plainResult.assigned_users = await UserModel.findAll({
+    where: { _id: { [Op.in]: result.assigned_users ? result.assigned_users.map((u) => u.user_id) : [] } },
+    attributes: ['_id', 'full_name', 'email', 'user_id', 'additional_plants', 'employee_plant'],
+  });
   return plainResult
 }
 
@@ -463,7 +467,7 @@ export const getTemplateStatusListService = async (
   // Fetch all templates with workflow
   const templateDataByIds = await TemplateMasterModel.findAll({
     where: { _id: { [Op.in]: templateIds } },
-    attributes:["_id","template_name","template_type","is_active","workflow_id"],
+    attributes: ["_id", "template_name", "template_type", "is_active", "workflow_id"],
     include: [
       {
         model: WorkflowModel,
@@ -507,7 +511,7 @@ export const getTemplateStatusListService = async (
   // Collect all HOD IDs and user IDs from submissions
   const allHodIds = new Set();
   const allUserFullIds = new Set();
-  
+
   SubmitionData.forEach((item) => {
     if (item.user && item.user._id) {
       allUserFullIds.add(item.user._id);
@@ -585,7 +589,7 @@ export const getTemplateStatusListService = async (
   // Create approval map
   const approvalMap = new Map();
   const rejectionStageMap = new Map();
-  
+
   workflowApprovals.forEach((approval) => {
     const approvalJson = approval.toJSON();
 
@@ -614,7 +618,7 @@ export const getTemplateStatusListService = async (
 
   // Create template map with workflow processing
   const templateMap = new Map();
-  
+
   templateDataByIds.forEach((template) => {
     const templateJson = template.toJSON();
     templateMap.set(templateJson._id, templateJson);
@@ -665,7 +669,7 @@ export const getTemplateStatusListService = async (
             expectedApproverUserId = matchedUser?.user_id || null;
           }
 
-          
+
 
           const approvalKey = `${template._id}-${template.workflow_id}-${expectedApproverUserId}-${item.user_id}-${item._id}`;
           const stageApprovals = approvalMap.get(approvalKey) || [];
@@ -684,21 +688,21 @@ export const getTemplateStatusListService = async (
     }
 
     const filteredApprovals = workflowApprovals
-  .filter((wa) => 
-    wa.template_id === item.template_id && 
-    wa.user_id === item.user_id && 
-    wa.submission_id === item._id
-  )
-  .map((approval) => {
-    const approvalJson = approval.toJSON ? approval.toJSON() : approval;
-    
-    // Add approved_by user details
-    if (approvalJson.approved_by) {
-      approvalJson.approved_by_user = approvedByUserMap.get(approvalJson.approved_by) || null;
-    }
-    
-    return approvalJson;
-  });
+      .filter((wa) =>
+        wa.template_id === item.template_id &&
+        wa.user_id === item.user_id &&
+        wa.submission_id === item._id
+      )
+      .map((approval) => {
+        const approvalJson = approval.toJSON ? approval.toJSON() : approval;
+
+        // Add approved_by user details
+        if (approvalJson.approved_by) {
+          approvalJson.approved_by_user = approvedByUserMap.get(approvalJson.approved_by) || null;
+        }
+
+        return approvalJson;
+      });
 
     return {
       ...item.dataValues,
@@ -706,8 +710,8 @@ export const getTemplateStatusListService = async (
         ...template,
         workflow: workflowWithApprovals,
       } : null,
-      approval:filteredApprovals,
-      template_status:workflowWithApprovals?.workflow.length > 0 ? (filteredApprovals.filter((it) => it.current_stage === workflowWithApprovals?.workflow.length - 1 && it.status === "approved").length > 0 ? "approved" : "in-progress") : "pending"
+      approval: filteredApprovals,
+      template_status: workflowWithApprovals?.workflow.length > 0 ? (filteredApprovals.filter((it) => it.current_stage === workflowWithApprovals?.workflow.length - 1 && it.status === "approved").length > 0 ? "approved" : "in-progress") : "pending"
     };
   });
 };
