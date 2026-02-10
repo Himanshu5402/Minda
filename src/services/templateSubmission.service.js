@@ -17,28 +17,28 @@ export const createTemplateSubmissionService = async (data) => {
   }
 
   // Check if submission already exists for this template and user
-  const existingSubmission = await TemplateSubmissionModel.findOne({
-    where: {
-      template_id,
-      user_id,
-      plant_id,
-      process_approved:false
-    },
-  });
+  // const existingSubmission = await TemplateSubmissionModel.findOne({
+  //   where: {
+  //     template_id,
+  //     user_id,
+  //     plant_id,
+  //     process_approved:false
+  //   },
+  // });
 
-  if (existingSubmission) {
-    // Allow updating SUBMITTED submissions - change status to DRAFT when editing
-    if (existingSubmission.status === "SUBMITTED" && status === "SUBMITTED") {
-      throw new BadRequestError("Please edit the existing submission first", "createTemplateSubmissionService()");
-    }
+  // if (existingSubmission) {
+  //   // Allow updating SUBMITTED submissions - change status to DRAFT when editing
+  //   if (existingSubmission.status === "SUBMITTED" && status === "SUBMITTED") {
+  //     throw new BadRequestError("Please edit the existing submission first", "createTemplateSubmissionService()");
+  //   }
     
-    // Update existing submission (DRAFT or SUBMITTED)
-    await existingSubmission.update({
-      form_data: form_data || {},
-      status: status || (existingSubmission.status === "SUBMITTED" ? "DRAFT" : "DRAFT"),
-    });
-    return existingSubmission;
-  }
+  //   // Update existing submission (DRAFT or SUBMITTED)
+  //   await existingSubmission.update({
+  //     form_data: form_data || {},
+  //     status: status || (existingSubmission.status === "SUBMITTED" ? "DRAFT" : "DRAFT"),
+  //   });
+  //   return existingSubmission;
+  // }
 
   // Create new submission
   const submission = await TemplateSubmissionModel.create({

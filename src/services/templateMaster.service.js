@@ -245,7 +245,7 @@ export const addFieldToTemplateService = async (
 
 export const updateFieldService = async (
   fieldId,
-  { field_name, field_type, is_mandatory, dropdown_options },
+  { field_name, field_type, is_mandatory, dropdown_options,group_id,type },
 ) => {
   const field = await TemplateFieldModel.findByPk(fieldId)
   if (!field) {
@@ -291,6 +291,8 @@ export const updateFieldService = async (
     field_type,
     is_mandatory: Boolean(is_mandatory),
     dropdown_options: dropdownOptionsString,
+    group_id,
+    type
   })
 
   return field
@@ -668,7 +670,7 @@ export const getTemplateStatusListService = async (
     if (template && template.workflow && currentUser) {
       const workflowForUser = JSON.parse(JSON.stringify(template.workflow));
 
-      console.log('this is workflow', workflowForUser)
+      // console.log('this is workflow', workflowForUser)
 
       if (workflowForUser && workflowForUser.workflow) {
         const rejectKey = `${template._id}-${item.user_id}`
