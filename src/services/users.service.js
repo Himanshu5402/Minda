@@ -576,6 +576,7 @@ export const GetTemplateAssignModuleServiceByUser = async (filterUserId) => {
             );
 
 
+
             if (String(currentApprover.currentApproverUserId) !== String(filterUserId)) continue;
 
             const mapKey = `${submission.submission_id}`;
