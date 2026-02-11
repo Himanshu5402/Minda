@@ -24,6 +24,11 @@ export const createStatusHistory = AsyncHandler(async (req, res) => {
 
     if (check?.workflow?.workflow?.length - 1 === check?.current_stage && check?.status === "approved") {
         await updateAssignedUserStatusService(check?.template_id, { user_id: check?.user_id, status: "completed" })
+        await TemplateSubmissionModel.update({ process_approved: true },
+            {
+                where: { _id: result?.dataValues?.submission_id }
+            }
+        );
     }
 
     if (check?.status === "approved" && check?.template_id && check?.user_id && check?.approved_by) {
@@ -42,13 +47,15 @@ export const createStatusHistory = AsyncHandler(async (req, res) => {
         if (updated[0] > 0) {
             logger.info("Reassign approved: updated reassign_status to true for template", check.template_id);
         }
-
-        await TemplateSubmissionModel.update({ _id: result?.submission_id }, { process_approved: true });
     }
 
     if (check?.status === "reject" || check?.status === "rejected") {
         await updateAssignedUserStatusService(check?.template_id, { user_id: check?.user_id, status: "rejected" })
-        await TemplateSubmissionModel.update({ _id: result?.submission_id }, { process_approved: true })
+        await TemplateSubmissionModel.update({ process_approved: true },
+            {
+                where: { _id: result?.dataValues?.submission_id }
+            }
+        );
     }
 
     if (check?.status === "reassigned" && check?.template_id && check?.user_id) {

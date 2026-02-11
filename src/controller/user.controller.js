@@ -57,12 +57,12 @@ export const LoginUser = AsyncHandler(async (req, res) => {
     res.cookie("AT", accessToken, {
         httpOnly: true,        // Cookie not accessible via document.cookie
         secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge: 30 * 24 * 60 * 60 * 1000, // Lifetime in milliseconds
+        maxAge: 12 * 60 * 60 * 1000, // Lifetime in milliseconds
         sameSite: "strict",    // "strict" | "lax" | "none"
     }).cookie("RT", refreshToken, {
         httpOnly: true,        // Cookie not accessible via document.cookie
         secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge: 31 * 24 * 60 * 60 * 1000, // Lifetime in milliseconds
+        maxAge: 12 * 60 * 60 * 1000, // Lifetime in milliseconds
         sameSite: "strict",    // "strict" | "lax" | "none"
     });
 
@@ -124,12 +124,12 @@ export const RefreshToken = AsyncHandler(async (req, res) => {
     res.cookie("AT", accessToken, {
         httpOnly: true,        // Cookie not accessible via document.cookie
         secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge: 30 * 24 * 60 * 60 * 1000, // Lifetime in milliseconds
+        maxAge:  60 * 60 * 1000, // Lifetime in milliseconds
         sameSite: "strict",    // "strict" | "lax" | "none"
     }).cookie("RT", refreshToken, {
         httpOnly: true,        // Cookie not accessible via document.cookie
         secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge: 31 * 24 * 60 * 60 * 1000, // Lifetime in milliseconds
+        maxAge:  60 * 60 * 1000, // Lifetime in milliseconds
         sameSite: "strict",    // "strict" | "lax" | "none"
     });
 

@@ -2,9 +2,12 @@ import { TemplateSubmissionModel } from "../models/templateSubmission.model.js";
 import { TemplateMasterModel } from "../models/templateMaster.model.js";
 import { UserModel } from "../models/user.modal.js";
 import { BadRequestError, NotFoundError } from "../utils/errorHandler.js";
+import { PlantModel } from "../models/plant.modal.js";
+import { TemplateFieldModel } from "../models/templateField.model.js";
+import { Op } from "sequelize";
 
 export const createTemplateSubmissionService = async (data) => {
-  const { template_id, user_id, form_data, status,plant_id } = data;
+  const { template_id, user_id, form_data, status, plant_id } = data;
 
   if (!template_id || !user_id) {
     throw new BadRequestError("Template ID and User ID are required", "createTemplateSubmissionService()");
@@ -17,27 +20,28 @@ export const createTemplateSubmissionService = async (data) => {
   }
 
   // Check if submission already exists for this template and user
-  const existingSubmission = await TemplateSubmissionModel.findOne({
-    where: {
-      template_id,
-      user_id,
-      plant_id
-    },
-  });
+  // const existingSubmission = await TemplateSubmissionModel.findOne({
+  //   where: {
+  //     template_id,
+  //     user_id,
+  //     plant_id,
+  //     process_approved:false
+  //   },
+  // });
 
-  if (existingSubmission) {
-    // Allow updating SUBMITTED submissions - change status to DRAFT when editing
-    if (existingSubmission.status === "SUBMITTED" && status === "SUBMITTED") {
-      throw new BadRequestError("Please edit the existing submission first", "createTemplateSubmissionService()");
-    }
-    
-    // Update existing submission (DRAFT or SUBMITTED)
-    await existingSubmission.update({
-      form_data: form_data || {},
-      status: status || (existingSubmission.status === "SUBMITTED" ? "DRAFT" : "DRAFT"),
-    });
-    return existingSubmission;
-  }
+  // if (existingSubmission) {
+  //   // Allow updating SUBMITTED submissions - change status to DRAFT when editing
+  //   if (existingSubmission.status === "SUBMITTED" && status === "SUBMITTED") {
+  //     throw new BadRequestError("Please edit the existing submission first", "createTemplateSubmissionService()");
+  //   }
+
+  //   // Update existing submission (DRAFT or SUBMITTED)
+  //   await existingSubmission.update({
+  //     form_data: form_data || {},
+  //     status: status || (existingSubmission.status === "SUBMITTED" ? "DRAFT" : "DRAFT"),
+  //   });
+  //   return existingSubmission;
+  // }
 
   // Create new submission
   const submission = await TemplateSubmissionModel.create({
@@ -92,8 +96,8 @@ export const getTemplateSubmissionService = async (submissionId) => {
   return submission;
 };
 
-export const getUserTemplateSubmissionsService = async (userId, templateId = null,plant_id = null) => {
-  const where = { user_id: userId, plant_id }
+export const getUserTemplateSubmissionsService = async (userId, templateId = null, plant_id = null) => {
+  const where = { user_id: userId, plant_id, process_approved: false };
   if (templateId) {
     where.template_id = templateId;
   }
@@ -142,3 +146,61 @@ export const submitTemplateSubmissionService = async (submissionId) => {
 
   return submission;
 };
+
+export const getTemplateSubmitionDataService = async (isAdmin,user_id,limit, skip) => {
+  const result = await TemplateSubmissionModel.findAll({
+    where: isAdmin ? {} : {user_id},
+    include: [{ model: TemplateMasterModel, as: "template", attributes: ["_id", "template_name", "template_type"] },
+    { model: UserModel, as: "user", attributes: ["_id", "full_name", "email", "user_id"] },
+    { model: PlantModel, as: "plant", attributes: ["_id", "plant_name", "plant_code"] },
+    ],
+    attributes:["_id","template_id","user_id","form_data","status","createdAt","updatedAt","plant_id"],
+
+    offset: skip,
+    limit
+  });
+
+  const fieldIds = result.map(submition => submition.form_data ? Object.keys(submition.form_data) : []).flat();
+
+  const data = await TemplateFieldModel.findAll({
+    where: {
+      _id: { [Op.in]: fieldIds }
+    }
+  })
+
+  const fieldMap = new Map();
+
+  data.forEach(field => {
+    fieldMap.set(field._id, field.field_name);
+  });
+
+
+ return result.map(item => {
+  let submission = item.toJSON();
+
+  if (submission.form_data) {
+    const updatedFormData = {};
+    let index = 0;
+
+    for (const key in submission.form_data) {
+      const fieldName = fieldMap.get(key) || key;
+
+      // 👇 add ~index
+      updatedFormData[`${fieldName}~${index}`] =
+        submission.form_data[key];
+
+      index++;
+    }
+
+    return {
+      ...submission,
+      filled_data: updatedFormData
+    };
+  }
+
+  return submission;
+});
+
+
+
+}

@@ -253,7 +253,8 @@ export const GetTemplateAssignModuleServiceByUser = async (filterUserId) => {
         where: {
             template_id: { [Op.in]: templateIds },
             user_id: { [Op.in]: userIds },
-            status: "SUBMITTED"
+            status: "SUBMITTED",
+            process_approved:false
         },
         include:[{model:PlantModel,as:"plant",attributes:["_id","plant_name","plant_code"]}],
         raw: false
@@ -573,6 +574,7 @@ export const GetTemplateAssignModuleServiceByUser = async (filterUserId) => {
                 submission.submission_id,
                 submission.edit_count
             );
+
 
 
             if (String(currentApprover.currentApproverUserId) !== String(filterUserId)) continue;

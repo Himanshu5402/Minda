@@ -7,6 +7,7 @@ import {
   getUserTemplateSubmissionsService,
   getLatestUserSubmissionForTemplateService,
   submitTemplateSubmissionService,
+  getTemplateSubmitionDataService,
 } from "../services/templateSubmission.service.js";
 import { getTemplateWorkflowStatusService, updateAssignedUserStatusService } from "../services/templateMaster.service.js";
 import { GetAdmin, GetUsersByIdService } from "../services/users.service.js";
@@ -161,6 +162,20 @@ export const submitTemplateSubmission = AsyncHandler(async (req, res) => {
 
   return res.status(StatusCodes.OK).json({
     message: "Template submitted successfully",
+    data: result,
+  });
+});
+
+export const getTemplateSubmitionData = AsyncHandler(async (req, res) => {
+  let { limit,pages } = req.query;
+  const user = req.currentUser;
+  limit = parseInt(limit) || 10;
+  pages = parseInt(pages) || 1;
+  const skip = (pages - 1) * limit; 
+  const result = await getTemplateSubmitionDataService(user.is_admin,user._id,limit, skip);
+
+  return res.status(StatusCodes.OK).json({
+    message: "Template submission data fetched successfully",
     data: result,
   });
 });

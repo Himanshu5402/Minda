@@ -6,10 +6,12 @@ import {
   getUserTemplateSubmissions,
   getLatestUserSubmissionForTemplate,
   submitTemplateSubmission,
+  getTemplateSubmitionData,
 } from "../controller/templateSubmission.controller.js";
 
 const router = Router();
 
+router.get("/get-template-submission-data", getTemplateSubmitionData);
 router.post("/", createTemplateSubmission);
 router.get("/", getUserTemplateSubmissions);
 router.get("/latest/:template_id", getLatestUserSubmissionForTemplate);
