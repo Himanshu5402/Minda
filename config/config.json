@@ -2,8 +2,8 @@
   "development": {
     "username": "sa",
     "password": "Admin@123",
-    "database": "test",
-    "host": "minda",
+    "database": "minda",
+    "host": "localhost",
     "dialect": "mssql"
   },
   "production": {

@@ -3,16 +3,18 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up (queryInterface, Sequelize) {
-    /**
-     * Add altering commands here.
-     *
-     * Example:
-     * await queryInterface.createTable('users', { id: Sequelize.INTEGER });
-     */
-    await queryInterface.addColumn("template_submissions","submission_id",{
-      type:Sequelize.STRING(100),
-      allowNull:true,
-    })
+    try {
+      await queryInterface.addColumn("template_submissions","submission_id",{
+        type:Sequelize.STRING(100),
+        allowNull:true,
+      });
+    } catch (error) {
+      if (error.message.includes('already exists') || error.message.includes('specified more than once')) {
+        console.log('Column submission_id already exists in template_submissions, skipping...');
+      } else {
+        throw error;
+      }
+    }
   },
 
   async down (queryInterface) {
