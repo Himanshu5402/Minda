@@ -126,6 +126,7 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
   // convert Sequelize instance → plain object
   const plainResult = result.get({ plain: true })
 
+
   // sort fields
   if (Array.isArray(plainResult.fields)) {
     plainResult.fields.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -135,14 +136,16 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
   if (!isAdmin) {
     plainResult.assigned_users = plainResult.assigned_users?.filter(
       (au) => au.user_id === user_id,
-    )[0]
-    plainResult.fields = plainResult.fields.filter((item) => item.type === 'User')
-    plainResult.assignedUser = await UserModel.findOne({
-      where: {
-        _id: plainResult.assigned_users?.user_id,
-      },
-      attributes: ['_id', 'full_name', 'email', 'user_id', 'additional_plants', 'employee_plant'],
-    })
+    )[0];
+    if (plainResult.assigned_users) {
+      plainResult.fields = plainResult.fields.filter((item) => item.type === 'User')
+      plainResult.assignedUser = await UserModel.findOne({
+        where: {
+          _id: plainResult.assigned_users?.user_id,
+        },
+        attributes: ['_id', 'full_name', 'email', 'user_id', 'additional_plants', 'employee_plant'],
+      })
+    }
   }
 
   if (
@@ -162,6 +165,8 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
       attributes: ['_id', 'plant_name', 'plant_code'],
     })
   }
+
+
 
   plainResult.fields = await Promise.all(
     plainResult.fields.map(async (field) => {
@@ -245,7 +250,7 @@ export const addFieldToTemplateService = async (
 
 export const updateFieldService = async (
   fieldId,
-  { field_name, field_type, is_mandatory, dropdown_options,group_id,type },
+  { field_name, field_type, is_mandatory, dropdown_options, group_id, type },
 ) => {
   const field = await TemplateFieldModel.findByPk(fieldId)
   if (!field) {
@@ -404,10 +409,8 @@ export const getAssignedTemplatesService = async (userId, limit, skip) => {
     where: {
       is_active: true,
     },
-    offset: skip,
-    limit,
     include: [templateFieldsInclude, assignedUserInclude],
-    order: [['createdAt', 'DESC']],
+    order: [['createdAt', 'ASC']],
   })
 
   // console.log(allTemplates[0].dataValues.fields);
@@ -438,11 +441,10 @@ export const getAssignedTemplatesService = async (userId, limit, skip) => {
       ...plainItem,
       assigned_users: filteredUser || null,
     }
-  })
-
-  // console.log(assignedTemplates);
-
+  }).filter((item)=>item.assigned_users.user_id === userId).slice(skip,(skip+limit));
+  
   return filteredData
+
 }
 
 export const getTemplateStatusListService = async (
@@ -676,9 +678,9 @@ export const getTemplateStatusListService = async (
         const rejectKey = `${template._id}-${item.user_id}`
         const rejectionStage = rejectionStageMap.get(rejectKey)
         const workflowStages = workflowForUser.workflow
-          // rejectionStage != null
-          //   ? workflowForUser.workflow.filter((_, idx) => idx <= rejectionStage)
-          //   : workflowForUser.workflow
+        // rejectionStage != null
+        //   ? workflowForUser.workflow.filter((_, idx) => idx <= rejectionStage)
+        //   : workflowForUser.workflow
 
         workflowForUser.workflow = workflowStages.map((wf, stageIndex) => {
           let groupDetail = null
@@ -744,18 +746,18 @@ export const getTemplateStatusListService = async (
       ...item.dataValues,
       template_data: template
         ? {
-            ...template,
-            workflow: workflowWithApprovals,
-          }
+          ...template,
+          workflow: workflowWithApprovals,
+        }
         : null,
       approval: filteredApprovals,
       template_status:
         workflowWithApprovals?.workflow.length > 0
           ? filteredApprovals.filter(
-              (it) =>
-                it.current_stage === workflowWithApprovals?.workflow.length - 1 &&
-                it.status === 'approved',
-            ).length > 0
+            (it) =>
+              it.current_stage === workflowWithApprovals?.workflow.length - 1 &&
+              it.status === 'approved',
+          ).length > 0
             ? 'approved'
             : 'in-progress'
           : 'pending',
@@ -853,10 +855,10 @@ export const getTemplateWorkflowStatusService = async (
   const hodUsers =
     hodUserIds.length > 0
       ? await UserModel.findAll({
-          where: { _id: { [Op.in]: hodUserIds } },
-          attributes: ['_id', 'full_name'],
-          raw: true,
-        })
+        where: { _id: { [Op.in]: hodUserIds } },
+        attributes: ['_id', 'full_name'],
+        raw: true,
+      })
       : []
   const hodNameById = Object.fromEntries((hodUsers || []).map((u) => [u._id, u.full_name || 'HOD']))
 
@@ -892,13 +894,13 @@ export const getTemplateWorkflowStatusService = async (
       const matchedUser =
         assignedUserPlantId != null
           ? users.find((gu) => {
-              try {
-                const plantsArray = JSON.parse(gu.plants_id || '[]')
-                return plantsArray.includes(assignedUserPlantId)
-              } catch {
-                return false
-              }
-            })
+            try {
+              const plantsArray = JSON.parse(gu.plants_id || '[]')
+              return plantsArray.includes(assignedUserPlantId)
+            } catch {
+              return false
+            }
+          })
           : users[0] || null // If no assigned user/plant, fallback to first user
       if (matchedUser) {
         const u =
@@ -1068,14 +1070,14 @@ export const getCurrentApproverForTemplateAssignee = async (
   const allowedReassignUserIds =
     nextStage > 0
       ? [
-          ...new Set(
-            chain
-              .slice(0, nextStage)
-              .map((c) => c.user_id)
-              .filter(Boolean)
-              .map(String),
-          ),
-        ]
+        ...new Set(
+          chain
+            .slice(0, nextStage)
+            .map((c) => c.user_id)
+            .filter(Boolean)
+            .map(String),
+        ),
+      ]
       : []
 
   return {
@@ -1256,9 +1258,9 @@ export const testing = async (hodId) => {
           // Add workflow object with hod_id
           const workflowObj = tpl.workflow
             ? {
-                ...(tpl.workflow.toJSON ? tpl.workflow.toJSON() : tpl.workflow),
-                hod_id: hodId,
-              }
+              ...(tpl.workflow.toJSON ? tpl.workflow.toJSON() : tpl.workflow),
+              hod_id: hodId,
+            }
             : null
 
           // Add is_approved_by_hod field to workflow approvals based on approved_by

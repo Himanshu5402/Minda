@@ -14,6 +14,7 @@ import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
 import { BadRequestError, Customerror } from "./utils/errorHandler.js";
 import mainRoutes from "./routes.js";
+import { StatusCodes } from "http-status-codes";
 
 
 const SERVER_PORT = 9021;
@@ -60,7 +61,10 @@ function errorHandler(app) {
     app.use((err, _req, res, next) => {
         if (err instanceof Customerror) {
             logger.error(`error coming from ${err?.comingfrom} with message: ${err.message} and status code: ${err.statusCode}`);
-            return res.status(err.statusCode).json(err.seriyalizeErrors());
+            res.status(err.statusCode).json(err.seriyalizeErrors());
+        } else {
+            logger.error(`error coming with message: ${err.message} `);
+            res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({message:err.message});
         }
         next(err);
     });
