@@ -2,6 +2,8 @@ import { TemplateSubmissionModel } from "../models/templateSubmission.model.js";
 import { TemplateMasterModel } from "../models/templateMaster.model.js";
 import { UserModel } from "../models/user.modal.js";
 import { BadRequestError, NotFoundError } from "../utils/errorHandler.js";
+import { Template } from "ejs";
+import { PlantModel } from "../models/plant.modal.js";
 
 export const createTemplateSubmissionService = async (data) => {
   const { template_id, user_id, form_data, status,plant_id } = data;
@@ -143,3 +145,19 @@ export const submitTemplateSubmissionService = async (submissionId) => {
 
   return submission;
 };
+
+
+export const getTemplateSubmitionDataService = async (limit,skip) => {
+  const result = await TemplateSubmissionModel.findAll({
+    include:[{model:TemplateMasterModel,as:"template",attributes:["_id","template_name","template_type"]},
+    {model:UserModel,as:"user",attributes:["_id","full_name","email","user_id"]},
+    {model:PlantModel,as:"plant",attributes:["_id","plant_name","plant_code"]},
+  ],
+
+    offset: skip,
+    limit
+  });
+
+
+  return result;
+}
