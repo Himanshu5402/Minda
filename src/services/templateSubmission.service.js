@@ -2,7 +2,6 @@ import { TemplateSubmissionModel } from "../models/templateSubmission.model.js";
 import { TemplateMasterModel } from "../models/templateMaster.model.js";
 import { UserModel } from "../models/user.modal.js";
 import { BadRequestError, NotFoundError } from "../utils/errorHandler.js";
-import { Template } from "ejs";
 import { PlantModel } from "../models/plant.modal.js";
 import { TemplateFieldModel } from "../models/templateField.model.js";
 import { Op } from "sequelize";
@@ -149,8 +148,9 @@ export const submitTemplateSubmissionService = async (submissionId) => {
 };
 
 
-export const getTemplateSubmitionDataService = async (limit, skip) => {
+export const getTemplateSubmitionDataService = async (isAdmin,user_id,limit, skip) => {
   const result = await TemplateSubmissionModel.findAll({
+    where: isAdmin ? {} : {user_id},
     include: [{ model: TemplateMasterModel, as: "template", attributes: ["_id", "template_name", "template_type"] },
     { model: UserModel, as: "user", attributes: ["_id", "full_name", "email", "user_id"] },
     { model: PlantModel, as: "plant", attributes: ["_id", "plant_name", "plant_code"] },

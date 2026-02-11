@@ -168,10 +168,11 @@ export const submitTemplateSubmission = AsyncHandler(async (req, res) => {
 
 export const getTemplateSubmitionData = AsyncHandler(async (req, res) => {
   let { limit,pages } = req.query;
+  const user = req.currentUser;
   limit = parseInt(limit) || 10;
   pages = parseInt(pages) || 1;
   const skip = (pages - 1) * limit; 
-  const result = await getTemplateSubmitionDataService(limit, skip);
+  const result = await getTemplateSubmitionDataService(user.is_admin,user._id,limit, skip);
 
   return res.status(StatusCodes.OK).json({
     message: "Template submission data fetched successfully",
