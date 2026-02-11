@@ -54,11 +54,17 @@ export const getAllQualityChecksService = async (filters = {}) => {
     ];
   }
 
-  const list = await QualityCheckModel.findAll({
+  const page = Math.max(parseInt(filters.page) || 1, 1);
+  const limit = Math.min(parseInt(filters.limit) || 10, 100);
+  const offset = (page - 1) * limit;
+
+  const { rows, count } = await QualityCheckModel.findAndCountAll({
     where,
     order: [["created_at", "DESC"]],
+    limit,
+    offset,
   });
-  return list;
+  return { data: rows, total: count, page, limit };
 };
 
 export const getQualityCheckByIdService = async (id) => {

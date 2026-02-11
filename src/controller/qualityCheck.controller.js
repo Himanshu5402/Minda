@@ -17,7 +17,7 @@ export const createQualityCheck = AsyncHandler(async (req, res) => {
 });
 
 export const getAllQualityChecks = AsyncHandler(async (req, res) => {
-  const { machine_name, product_name, status, company_name, plant_name, search } = req.query;
+  const { machine_name, product_name, status, company_name, plant_name, search, page, limit } = req.query;
   const filters = {};
   if (machine_name) filters.machine_name = machine_name;
   if (product_name) filters.product_name = product_name;
@@ -25,11 +25,16 @@ export const getAllQualityChecks = AsyncHandler(async (req, res) => {
   if (company_name) filters.company_name = company_name;
   if (plant_name) filters.plant_name = plant_name;
   if (search) filters.search = search;
+  if (page) filters.page = page;
+  if (limit) filters.limit = limit;
 
   const result = await getAllQualityChecksService(filters);
   res.status(StatusCodes.OK).json({
     message: "Quality Checks fetched successfully",
-    data: result,
+    data: result.data,
+    total: result.total,
+    page: result.page,
+    limit: result.limit,
   });
 });
 
