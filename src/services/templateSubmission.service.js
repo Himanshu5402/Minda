@@ -147,7 +147,6 @@ export const submitTemplateSubmissionService = async (submissionId) => {
   return submission;
 };
 
-
 export const getTemplateSubmitionDataService = async (isAdmin,user_id,limit, skip) => {
   const result = await TemplateSubmissionModel.findAll({
     where: isAdmin ? {} : {user_id},
@@ -155,6 +154,7 @@ export const getTemplateSubmitionDataService = async (isAdmin,user_id,limit, ski
     { model: UserModel, as: "user", attributes: ["_id", "full_name", "email", "user_id"] },
     { model: PlantModel, as: "plant", attributes: ["_id", "plant_name", "plant_code"] },
     ],
+    attributes:["_id","template_id","user_id","form_data","status","createdAt","updatedAt","plant_id"],
 
     offset: skip,
     limit

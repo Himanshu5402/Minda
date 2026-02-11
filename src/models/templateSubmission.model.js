@@ -45,19 +45,23 @@ export const TemplateSubmissionModel = sequelize.define(
       allowNull: false,
       defaultValue: "DRAFT", // DRAFT, SUBMITTED
     },
-    edit_count:{
-      type:DataTypes.INTEGER,
-      allowNull:true,
-      defaultValue:0
+    edit_count: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
     },
-    plant_id:{
+    plant_id: {
       type: DataTypes.UUID,
       allowNull: true,
     },
-    process_approved:{
-      type:DataTypes.BOOLEAN,
-      allowNull:true,
-      defaultValue:false
+    process_approved: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false
+    },
+    submission_id: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
     }
   },
   {
@@ -69,5 +73,27 @@ export const TemplateSubmissionModel = sequelize.define(
       { fields: ["status"] },
       { fields: ["template_id", "user_id"] },
     ],
+    hooks: {
+      beforeCreate: async (submission) => {
+        // Get last submission ordered by submission_id descending
+        const lastSubmission = await TemplateSubmissionModel.findOne({
+          where:{
+            template_id: submission.template_id,
+          },
+          order: [['submission_id', 'DESC']],
+          attributes: ['submission_id']
+        });
+
+        let nextNumber = 1; 
+
+        if (lastSubmission && lastSubmission.submission_id) {
+          const lastNumber = parseInt(lastSubmission.submission_id, 10);
+          nextNumber = lastNumber + 1;
+        }
+
+        // Pad with zeros to create format like "0001", "0002", etc.
+        submission.submission_id = String(nextNumber).padStart(4, '0');
+      }
+    }
   }
 );
