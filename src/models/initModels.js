@@ -18,6 +18,9 @@ import { TemplateFieldModel } from "./templateField.model.js";
 import { TemplateSubmissionModel } from "./templateSubmission.model.js";
 import { WorkflowModel } from "./workflow.modal.js";
 import { WorkflowApprovalModel } from "./workflowApproval.model.js";
+import { PlcDataModel } from "./plcData.model.js";
+import { PlcProductModel } from "./plcProduct.model.js";
+import { QualityCheckModel } from "./qualityCheck.model.js";
 
 let modelsInitialized = false;
 
@@ -159,6 +162,15 @@ export const initModels = () => {
 
     PlantModel.hasMany(TemplateSubmissionModel, { foreignKey: "plant_id", as: "plantSubmissions" });
     TemplateSubmissionModel.belongsTo(PlantModel, { foreignKey: "plant_id", as: "plant" });
+    
+    PlcDataModel.belongsTo(CompanyModel, { foreignKey: "company_name", targetKey: "company_name", as: "company", constraints: false });
+    PlcDataModel.belongsTo(PlantModel, { foreignKey: "plant_name", targetKey: "plant_name", as: "plant", constraints: false });
+
+    PlcProductModel.belongsTo(CompanyModel, { foreignKey: "company_name", targetKey: "company_name", as: "company", constraints: false });
+    PlcProductModel.belongsTo(PlantModel, { foreignKey: "plant_name", targetKey: "plant_name", as: "plant", constraints: false });
+
+    QualityCheckModel.belongsTo(CompanyModel, { foreignKey: "company_name", targetKey: "company_name", as: "company", constraints: false });
+    QualityCheckModel.belongsTo(PlantModel, { foreignKey: "plant_name", targetKey: "plant_name", as: "plant", constraints: false });
 
 
 
@@ -176,6 +188,10 @@ export const initModels = () => {
         RoleModel,
         TypeModal,
         UserModel,
+        WorkflowApprovalModel,
+        PlcDataModel,
+        PlcProductModel,
+        QualityCheckModel
     };
 };
 
