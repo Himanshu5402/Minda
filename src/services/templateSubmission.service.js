@@ -1,22 +1,25 @@
-import { TemplateSubmissionModel } from "../models/templateSubmission.model.js";
-import { TemplateMasterModel } from "../models/templateMaster.model.js";
-import { UserModel } from "../models/user.modal.js";
-import { BadRequestError, NotFoundError } from "../utils/errorHandler.js";
-import { PlantModel } from "../models/plant.modal.js";
-import { TemplateFieldModel } from "../models/templateField.model.js";
-import { Op } from "sequelize";
+import { TemplateSubmissionModel } from '../models/templateSubmission.model.js'
+import { TemplateMasterModel } from '../models/templateMaster.model.js'
+import { UserModel } from '../models/user.modal.js'
+import { BadRequestError, NotFoundError } from '../utils/errorHandler.js'
+import { PlantModel } from '../models/plant.modal.js'
+import { TemplateFieldModel } from '../models/templateField.model.js'
+import { Op } from 'sequelize'
 
 export const createTemplateSubmissionService = async (data) => {
-  const { template_id, user_id, form_data, status, plant_id } = data;
+  const { template_id, user_id, form_data, status, plant_id } = data
 
   if (!template_id || !user_id) {
-    throw new BadRequestError("Template ID and User ID are required", "createTemplateSubmissionService()");
+    throw new BadRequestError(
+      'Template ID and User ID are required',
+      'createTemplateSubmissionService()',
+    )
   }
 
   // Verify template exists
-  const template = await TemplateMasterModel.findByPk(template_id);
+  const template = await TemplateMasterModel.findByPk(template_id)
   if (!template) {
-    throw new NotFoundError("Template not found", "createTemplateSubmissionService()");
+    throw new NotFoundError('Template not found', 'createTemplateSubmissionService()')
   }
 
   // Check if submission already exists for this template and user
@@ -48,58 +51,67 @@ export const createTemplateSubmissionService = async (data) => {
     template_id,
     user_id,
     form_data: form_data || {},
-    status: status || "DRAFT",
-    plant_id
-  });
+    status: status || 'DRAFT',
+    plant_id,
+  })
 
-  return submission;
-};
+  return submission
+}
 
 export const updateTemplateSubmissionService = async (submissionId, data) => {
-  const submission = await TemplateSubmissionModel.findByPk(submissionId);
+  const submission = await TemplateSubmissionModel.findByPk(submissionId)
   if (!submission) {
-    throw new NotFoundError("Submission not found", "updateTemplateSubmissionService()");
+    throw new NotFoundError('Submission not found', 'updateTemplateSubmissionService()')
   }
 
   // Allow editing SUBMITTED submissions - change status to DRAFT when editing
   const updateData = {
     form_data: data.form_data !== undefined ? data.form_data : submission.form_data,
-    status: data.status !== undefined ? data.status : (submission.status === "SUBMITTED" ? "DRAFT" : submission.status),
+    status:
+      data.status !== undefined
+        ? data.status
+        : submission.status === 'SUBMITTED'
+          ? 'DRAFT'
+          : submission.status,
     edit_count: data.edit_count,
-  };
+  }
 
-  await submission.update(updateData);
+  await submission.update(updateData)
 
-  return submission;
-};
+  return submission
+}
 
 export const getTemplateSubmissionService = async (submissionId) => {
   const submission = await TemplateSubmissionModel.findByPk(submissionId, {
     include: [
       {
         model: TemplateMasterModel,
-        as: "template",
-        attributes: ["_id", "template_name", "template_type"],
+        as: 'template',
+        attributes: ['_id', 'template_name', 'template_type'],
       },
       {
         model: UserModel,
-        as: "user",
-        attributes: ["_id", "full_name", "email", "user_id"],
+        as: 'user',
+        attributes: ['_id', 'full_name', 'email', 'user_id'],
       },
     ],
-  });
+  })
 
   if (!submission) {
-    throw new NotFoundError("Submission not found", "getTemplateSubmissionService()");
+    throw new NotFoundError('Submission not found', 'getTemplateSubmissionService()')
   }
 
-  return submission;
-};
+  return submission
+}
 
-export const getUserTemplateSubmissionsService = async (userId, templateId = null, plant_id = null) => {
-  const where = { user_id: userId, plant_id, process_approved: false };
+export const getUserTemplateSubmissionsService = async (
+  userId,
+  templateId = null,
+  plant_id = null,
+) => {
+  const where = { user_id: userId, plant_id, process_approved: false }
   if (templateId) {
-    where.template_id = templateId;
+    where.template_id = templateId
   }
 
   const submissions = await TemplateSubmissionModel.findAll({
@@ -107,20 +119,20 @@ export const getUserTemplateSubmissionsService = async (userId, templateId = nul
     include: [
       {
         model: TemplateMasterModel,
-        as: "template",
-        attributes: ["_id", "template_name", "template_type"],
+        as: 'template',
+        attributes: ['_id', 'template_name', 'template_type'],
       },
       {
         model: UserModel,
-        as: "user",
-        attributes: ["_id", "full_name", "email", "user_id"],
+        as: 'user',
+        attributes: ['_id', 'full_name', 'email', 'user_id'],
       },
     ],
-    order: [["createdAt", "DESC"]],
-  });
+    order: [['createdAt', 'DESC']],
+  })
 
-  return submissions;
-};
+  return submissions
+}
 
 export const getLatestUserSubmissionForTemplateService = async (userId, templateId) => {
   const submission = await TemplateSubmissionModel.findOne({
@@ -128,79 +140,120 @@ export const getLatestUserSubmissionForTemplateService = async (userId, template
       user_id: userId,
       template_id: templateId,
     },
-    order: [["createdAt", "DESC"]],
-  });
+    order: [['createdAt', 'DESC']],
+  })
 
-  return submission;
-};
+  return submission
+}
 
 export const submitTemplateSubmissionService = async (submissionId) => {
-  const submission = await TemplateSubmissionModel.findByPk(submissionId);
+  const submission = await TemplateSubmissionModel.findByPk(submissionId)
   if (!submission) {
-    throw new NotFoundError("Submission not found", "submitTemplateSubmissionService()");
+    throw new NotFoundError('Submission not found', 'submitTemplateSubmissionService()')
   }
 
   await submission.update({
-    status: "SUBMITTED",
-  });
+    status: 'SUBMITTED',
+  })
 
-  return submission;
-};
+  return submission
+}
 
-export const getTemplateSubmitionDataService = async (isAdmin,user_id,limit, skip) => {
+export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, skip) => {
   const result = await TemplateSubmissionModel.findAll({
-    where: isAdmin ? {} : {user_id},
-    include: [{ model: TemplateMasterModel, as: "template", attributes: ["_id", "template_name", "template_type"] },
-    { model: UserModel, as: "user", attributes: ["_id", "full_name", "email", "user_id"] },
-    { model: PlantModel, as: "plant", attributes: ["_id", "plant_name", "plant_code"] },
+    where: isAdmin ? {} : { user_id },
+    include: [
+      {
+        model: TemplateMasterModel,
+        as: 'template',
+        attributes: ['_id', 'template_name', 'template_type'],
+      },
+      { model: UserModel, as: 'user', attributes: ['_id', 'full_name', 'email', 'user_id'] },
+      { model: PlantModel, as: 'plant', attributes: ['_id', 'plant_name', 'plant_code'] },
     ],
-    attributes:["_id","template_id","user_id","form_data","status","createdAt","updatedAt","plant_id","submission_id"],
+    attributes: [
+      '_id',
+      'template_id',
+      'user_id',
+      'form_data',
+      'status',
+      'createdAt',
+      'updatedAt',
+      'plant_id',
+      'submission_id',
+      'edit_count',
+    ],
     order: [['createdAt', 'ASC']],
     offset: skip,
-    limit
-  });
+    limit,
+  })
 
-  const fieldIds = result.map(submition => submition.form_data ? Object.keys(submition.form_data) : []).flat();
+  const fieldIds = result
+    .map((submition) => (submition.form_data ? Object.keys(submition.form_data) : []))
+    .flat()
 
   const data = await TemplateFieldModel.findAll({
     where: {
-      _id: { [Op.in]: fieldIds }
-    }
+      _id: { [Op.in]: fieldIds },
+    },
   })
 
-  const fieldMap = new Map();
+  const fieldMap = new Map()
 
-  data.forEach(field => {
-    fieldMap.set(field._id, field.field_name);
-  });
+  data.forEach((field) => {
+    fieldMap.set(field._id, field.field_name)
+  })
 
+  const templateIds = [...new Set(result.map((item) => item.template_id))]
+  const templateFields = await TemplateFieldModel.findAll({
+    where: { template_id: { [Op.in]: templateIds } },
+    order: [['sort_order', 'ASC']],
+  })
 
- return result.map(item => {
-  let submission = item.toJSON();
-
-  if (submission.form_data) {
-    const updatedFormData = {};
-    let index = 0;
-
-    for (const key in submission.form_data) {
-      const fieldName = fieldMap.get(key) || key;
-
-      // 👇 add ~index
-      updatedFormData[`${fieldName}~${index}`] =
-        submission.form_data[key];
-
-      index++;
+  const templateFieldMap = new Map()
+  templateFields.forEach((field) => {
+    if (!templateFieldMap.has(field.template_id)) {
+      templateFieldMap.set(field.template_id, [])
     }
+    templateFieldMap.get(field.template_id).push(field.toJSON())
+  })
+
+  return result.map((item) => {
+    let submission = item.toJSON()
+
+    if (submission.form_data) {
+      const updatedFormData = {}
+      let index = 0
+
+      for (const key in submission.form_data) {
+        const fieldName = fieldMap.get(key) || key
+
+        // 👇 add ~index
+        updatedFormData[`${fieldName}~${index}`] = submission.form_data[key]
+
+        index++
+      }
+
+      const allFields = templateFieldMap.get(submission.template_id) || []
+      const assignedFields = isAdmin
+        ? allFields
+        : allFields.filter((f) => f.type === 'User' || f.type === null || f.type === undefined)
+
+      return {
+        ...submission,
+        filled_data: updatedFormData,
+        assigned_fields: assignedFields,
+      }
+    }
+
+    const allFields = templateFieldMap.get(submission.template_id) || []
+    const assignedFields = isAdmin
+      ? allFields
+      : allFields.filter((f) => f.type === 'User' || f.type === null || f.type === undefined)
 
     return {
       ...submission,
-      filled_data: updatedFormData
-    };
-  }
-
-  return submission;
-});
-
-
-
-};
+      assigned_fields: assignedFields,
+    }
+  })
+}
