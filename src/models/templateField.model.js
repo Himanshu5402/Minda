@@ -39,6 +39,7 @@ export const TemplateFieldModel = sequelize.define(
     type: { type: DataTypes.ENUM("HOD",'User','Approval'), allowNull: true,defaultValue:'User' },
     group_id: { type: DataTypes.UUID, allowNull: true },
     parent_id: { type: DataTypes.UUID, allowNull: true },
+    is_submission_only: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   {
     timestamps: true,

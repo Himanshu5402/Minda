@@ -39,7 +39,8 @@ export const listTemplates = AsyncHandler(async (req, res) => {
 
 export const getTemplateById = AsyncHandler(async (req, res) => {
   const user = req.currentUser;
-  const result = await getTemplateByIdService(user.is_admin,req.params.id,user._id)
+  const excludeSubmissionOnly = req.query.preview === 'true';
+  const result = await getTemplateByIdService(user.is_admin, req.params.id, user._id, excludeSubmissionOnly)
   res.status(StatusCodes.OK).json({
     message: 'Template fetched successfully',
     data: result,

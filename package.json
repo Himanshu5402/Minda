@@ -15,7 +15,8 @@
     "format": "prettier . --write",
     "undo": "npx sequelize-cli db:migrate:undo",
     "make:migration": "npx sequelize-cli migration:generate --name",
-    "migration":"npx sequelize-cli db:migrate"
+    "migration":"npx sequelize-cli db:migrate",
+    "add-is-submission-only": "node scripts/add-is-submission-only-column.js"
 },
 "keywords": [],
 "author": "nitin",

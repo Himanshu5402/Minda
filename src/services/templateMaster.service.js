@@ -114,7 +114,7 @@ export const listTemplatesService = async (skip, limit) => {
   })
 }
 
-export const getTemplateByIdService = async (isAdmin, id, user_id) => {
+export const getTemplateByIdService = async (isAdmin, id, user_id, excludeSubmissionOnly = false) => {
   const result = await TemplateMasterModel.findByPk(id, {
     include: [templateFieldsInclude, workflowInclude],
   })
@@ -129,6 +129,11 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
   // sort fields
   if (Array.isArray(plainResult.fields)) {
     plainResult.fields.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+  }
+
+  // sirf Manage Template preview ke liye: is_submission_only fields hide
+  if (excludeSubmissionOnly && Array.isArray(plainResult.fields)) {
+    plainResult.fields = plainResult.fields.filter((f) => !f.is_submission_only)
   }
 
   // filter User type fields
@@ -189,7 +194,7 @@ export const getTemplateByIdService = async (isAdmin, id, user_id) => {
 
 export const addFieldToTemplateService = async (
   templateId,
-  { field_name, field_type, is_mandatory, sort_order, dropdown_options, type, group_id, parent_id },
+  { field_name, field_type, is_mandatory, sort_order, dropdown_options, type, group_id, parent_id, is_submission_only },
 ) => {
   const template = await TemplateMasterModel.findByPk(templateId)
   if (!template) {
@@ -241,6 +246,7 @@ export const addFieldToTemplateService = async (
     type,
     group_id,
     parent_id,
+    is_submission_only: Boolean(is_submission_only),
   })
 
   return created

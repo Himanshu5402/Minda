@@ -1,7 +1,7 @@
 {
   "development": {
-    "username": "sa",
-    "password": "Admin@123",
+    "username": "nodeuser",
+    "password": "Node@123",
     "database": "minda",
     "host": "localhost",
     "dialect": "mssql"
@@ -15,5 +15,4 @@
     "port" :"49680"
   }
 }
-
 
