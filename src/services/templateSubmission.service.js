@@ -188,18 +188,26 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
     limit,
   })
 
-  const fieldIds = result
-    .map((submition) => (submition.form_data ? Object.keys(submition.form_data) : []))
+  // Collect base field IDs (strip _index from dynamic keys like fieldId_0, fieldId_1)
+  const rawKeys = result
+    .map((sub) => (sub.form_data ? Object.keys(sub.form_data) : []))
     .flat()
+  const baseFieldIds = [...new Set(rawKeys.map((k) => {
+    const lastUnderscore = k.lastIndexOf('_')
+    if (lastUnderscore > 0) {
+      const suffix = k.slice(lastUnderscore + 1)
+      if (/^\d+$/.test(suffix)) return k.slice(0, lastUnderscore)
+    }
+    return k
+  }))]
 
   const data = await TemplateFieldModel.findAll({
     where: {
-      _id: { [Op.in]: fieldIds },
+      _id: { [Op.in]: baseFieldIds },
     },
   })
 
   const fieldMap = new Map()
-
   data.forEach((field) => {
     fieldMap.set(field._id, field.field_name)
   })
@@ -226,11 +234,15 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
       let index = 0
 
       for (const key in submission.form_data) {
-        const fieldName = fieldMap.get(key) || key
-
-        // 👇 add ~index
+        let fieldName = fieldMap.get(key)
+        if (!fieldName) {
+          const lastUnderscore = key.lastIndexOf('_')
+          if (lastUnderscore > 0 && /^\d+$/.test(key.slice(lastUnderscore + 1))) {
+            fieldName = fieldMap.get(key.slice(0, lastUnderscore))
+          }
+        }
+        fieldName = fieldName || key
         updatedFormData[`${fieldName}~${index}`] = submission.form_data[key]
-
         index++
       }
 

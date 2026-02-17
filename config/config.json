@@ -1,7 +1,7 @@
 {
   "development": {
-    "username": "nodeuser",
-    "password": "Node@123",
+    "username": "sa",
+    "password": "Admin@123",
     "database": "minda",
     "host": "localhost",
     "dialect": "mssql"

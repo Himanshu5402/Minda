@@ -272,13 +272,22 @@ export const GetTemplateAssignModuleServiceByUser = async (filterUserId) => {
         const originalFormData = submission.form_data || {};
         const convertedFormData = {};
 
-        Object.keys(originalFormData).forEach((fieldId,index) => {
-            const fieldName = fieldIdToNameMap.get(fieldId);
-            if (fieldName) {
-                convertedFormData[fieldName + "~" + index] = originalFormData[fieldId];
-            } else {
-                convertedFormData[fieldId] = originalFormData[fieldId];
+        Object.keys(originalFormData).forEach((formKey, index) => {
+            let fieldName = fieldIdToNameMap.get(formKey);
+            let displayKey = formKey;
+            // Handle dynamic field keys: fieldId_index (e.g. C2F5B84A..._0)
+            if (!fieldName && formKey.includes('_')) {
+                const lastUnderscore = formKey.lastIndexOf('_');
+                const suffix = formKey.slice(lastUnderscore + 1);
+                if (/^\d+$/.test(suffix)) {
+                    const baseFieldId = formKey.slice(0, lastUnderscore);
+                    fieldName = fieldIdToNameMap.get(baseFieldId);
+                    if (fieldName) displayKey = fieldName + "~" + index;
+                }
+            } else if (fieldName) {
+                displayKey = fieldName + "~" + index;
             }
+            convertedFormData[displayKey] = originalFormData[formKey];
         });
 
         userSubmissionsMap.get(submission.user_id).push({
@@ -635,6 +644,11 @@ export const GetTemplateAssignModuleServiceByUser = async (filterUserId) => {
                 .filter(Boolean)
                 .map(u => ({ user_id: u._id, full_name: u.full_name || "" }));
 
+            // All template fields for form_data key resolution (labels + edit)
+            const templateFieldsForForm = allTemplateFields.filter(
+                tf => tf.template_id === template._id
+            );
+
             submissionsWithTemplates.push({
                 submission_id: submission.submission_id,
                 submission_edit_count: submission.edit_count,
@@ -653,7 +667,8 @@ export const GetTemplateAssignModuleServiceByUser = async (filterUserId) => {
                     approvals: approvals,
                     current_approver_stage: currentApprover.currentStage,
                     allowed_reassign_user_ids: allowedReassignUserIds,
-                    allowed_reassign_users: allowed_reassign_users
+                    allowed_reassign_users: allowed_reassign_users,
+                    fields: templateFieldsForForm
                 }
             });
         }
