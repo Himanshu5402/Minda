@@ -18,9 +18,7 @@ export const allCardsData = async (
 
      const hasDateFilter = Boolean(startDate && endDate);
  
-     // =========================
-     // 🔹 DATE HELPERS
-     // =========================
+    
      const normalizeStart = (date) => {
          const d = new Date(date);
          d.setHours(0, 0, 0, 0);
@@ -33,9 +31,7 @@ export const allCardsData = async (
          return d;
      };
  
-     // =========================
-     // 🔹 BASE FILTERS
-     // =========================
+    
      const assemblyWhere = {
          ...(company && { company_id: company }),
          ...(plant && { plant_id: plant }),
@@ -47,9 +43,7 @@ export const allCardsData = async (
          ...(plant && { employee_plant: plant }),
      };
  
-     // =========================
-     // 🔹 DATE FILTER (ONLY IF PROVIDED)
-     // =========================
+    
      const currentDateFilter = hasDateFilter
          ? {
              createdAt: {
@@ -59,11 +53,9 @@ export const allCardsData = async (
          }
          : {};
  
-     // =========================
-     // 🔹 CURRENT TOTALS
-     // =========================
+    
      const [
-         assembly_current,
+         assembly_current,  
          employee_current,
          process_current,
          parts_current,
@@ -76,7 +68,7 @@ export const allCardsData = async (
              },
          }),
  
-         UserModel.count({
+         UserModel.count({  
              where: {
                  ...userWhere,
                  ...currentDateFilter,
@@ -102,9 +94,7 @@ export const allCardsData = async (
          })
      ]);
  
-     // =========================
-     // 🔹 NO DATE → RETURN FULL DATA ONLY
-     // =========================
+    
      if (!hasDateFilter) {
          return {
              totals: {
@@ -128,9 +118,7 @@ export const allCardsData = async (
          };
      }
  
-     // =========================
-     // 🔹 PREVIOUS PERIOD (ONLY IF DATE EXISTS)
-     // =========================
+    
      const currentStart = normalizeStart(startDate);
      const currentEnd = normalizeEnd(endDate);
  
@@ -187,9 +175,7 @@ export const allCardsData = async (
          })
      ]);
  
-     // =========================
-     // 🔹 DIFFERENCE
-     // =========================
+   
      const diff = {
          assembly: assembly_current - assembly_last,
          employee: employee_current - employee_last,
@@ -212,7 +198,7 @@ export const allCardsData = async (
 
 
 
-export const GetMonthlyTrend = async (admin, user) => {
+export const GetMonthlyTrend = async (admin, user) => { 
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
