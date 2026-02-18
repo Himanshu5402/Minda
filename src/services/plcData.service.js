@@ -104,7 +104,7 @@ export const createPlcDataService = async (data) => {
 
   const { stop_time, device_id, status, timestamp } = known;
 
-  // Jab stop_time aaye: pehle wali row update karo
+  // Jab stop_time aaye: pehle wali open session row update karo (session close)
   if (stop_time && device_id) {
     const openRow = await PlcDataModel.findOne({
       where: { device_id, stop_time: null },
@@ -119,10 +119,10 @@ export const createPlcDataService = async (data) => {
       if (timestamp != null) updatePayload.timestamp = timestamp;
       await openRow.update(updatePayload);
       await attachProductToPlcData(openRow);
-      return openRow;
     }
   }
 
+  // Har payload ko DB mein save karo (1 sec, 10 sec jo bhi machine bheje – saara data save)
   const plcData = await PlcDataModel.create({
     ...known,
     extra_data: Object.keys(extra).length ? extra : null,
@@ -168,7 +168,7 @@ export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
   }
 
   const page = Math.max(pagination.page || 1, 1);
-  const limit = Math.min(pagination.limit || 10, 100);
+  const limit = Math.min(pagination.limit || 10, 5000);
   const offset = (page - 1) * limit;
 
   const plcDataList = await PlcDataModel.findAll({

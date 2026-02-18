@@ -34,7 +34,7 @@ export const getAllPlcData = AsyncHandler(async (req, res) => {
   if (timestampEnd) filters.timestampEnd = timestampEnd;
 
   const pageNumber = Math.max(parseInt(page) || 1, 1);
-  const pageSize = Math.min(parseInt(limit) || 10, 100);
+  const pageSize = Math.min(parseInt(limit) || 10, 5000);
   const offset = (pageNumber - 1) * pageSize;
 
   const result = await getAllPlcDataService(filters,{page: pageNumber,
