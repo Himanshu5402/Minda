@@ -161,7 +161,7 @@ export const submitTemplateSubmissionService = async (submissionId) => {
 
 export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, skip) => {
   const result = await TemplateSubmissionModel.findAll({
-    where: isAdmin ? {} : { user_id },
+    where: isAdmin ? { status: 'SUBMITTED' } : { user_id, status: 'SUBMITTED' },
     include: [
       {
         model: TemplateMasterModel,
@@ -189,17 +189,19 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
   })
 
   // Collect base field IDs (strip _index from dynamic keys like fieldId_0, fieldId_1)
-  const rawKeys = result
-    .map((sub) => (sub.form_data ? Object.keys(sub.form_data) : []))
-    .flat()
-  const baseFieldIds = [...new Set(rawKeys.map((k) => {
-    const lastUnderscore = k.lastIndexOf('_')
-    if (lastUnderscore > 0) {
-      const suffix = k.slice(lastUnderscore + 1)
-      if (/^\d+$/.test(suffix)) return k.slice(0, lastUnderscore)
-    }
-    return k
-  }))]
+  const rawKeys = result.map((sub) => (sub.form_data ? Object.keys(sub.form_data) : [])).flat()
+  const baseFieldIds = [
+    ...new Set(
+      rawKeys.map((k) => {
+        const lastUnderscore = k.lastIndexOf('_')
+        if (lastUnderscore > 0) {
+          const suffix = k.slice(lastUnderscore + 1)
+          if (/^\d+$/.test(suffix)) return k.slice(0, lastUnderscore)
+        }
+        return k
+      }),
+    ),
+  ]
 
   const data = await TemplateFieldModel.findAll({
     where: {

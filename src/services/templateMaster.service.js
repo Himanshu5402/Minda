@@ -114,7 +114,12 @@ export const listTemplatesService = async (skip, limit) => {
   })
 }
 
-export const getTemplateByIdService = async (isAdmin, id, user_id, excludeSubmissionOnly = false) => {
+export const getTemplateByIdService = async (
+  isAdmin,
+  id,
+  user_id,
+  excludeSubmissionOnly = false,
+) => {
   const result = await TemplateMasterModel.findByPk(id, {
     include: [templateFieldsInclude, workflowInclude],
   })
@@ -142,7 +147,9 @@ export const getTemplateByIdService = async (isAdmin, id, user_id, excludeSubmis
       (au) => au.user_id === user_id,
     )[0]
     if (plainResult.assigned_users) {
-      plainResult.fields = plainResult.fields.filter((item) => item.type === 'User')
+      plainResult.fields = plainResult.fields.filter(
+        (item) => item.type === 'User' || item.type === 'HOD' || item.type === 'Approval',
+      )
       plainResult.assignedUser = await UserModel.findOne({
         where: {
           _id: plainResult.assigned_users?.user_id,
@@ -194,7 +201,17 @@ export const getTemplateByIdService = async (isAdmin, id, user_id, excludeSubmis
 
 export const addFieldToTemplateService = async (
   templateId,
-  { field_name, field_type, is_mandatory, sort_order, dropdown_options, type, group_id, parent_id, is_submission_only },
+  {
+    field_name,
+    field_type,
+    is_mandatory,
+    sort_order,
+    dropdown_options,
+    type,
+    group_id,
+    parent_id,
+    is_submission_only,
+  },
 ) => {
   const template = await TemplateMasterModel.findByPk(templateId)
   if (!template) {
@@ -462,16 +479,81 @@ export const getTemplateStatusListService = async (
   userId = null,
   isAdmin = false,
 ) => {
-  const SubmitionData = await TemplateSubmissionModel.findAll({
-    where: isAdmin ? {} : { user_id: userId },
+  const trimmedSearch = typeof search === 'string' ? search.trim() : ''
+  const normalizedStatus = typeof status === 'string' ? status.trim().toLowerCase() : ''
+  const workflowStatusFilters = new Set([
+    'approved',
+    'in-progress',
+    'pending',
+    're-assign',
+    'rejected',
+  ])
+  const isWorkflowStatusFilter = workflowStatusFilters.has(normalizedStatus)
+  const isAssignedStatusFilter =
+    ASSIGNED_USER_STATUS_ENUM.includes(normalizedStatus) && !isWorkflowStatusFilter
+  const usePostFilter = isAssignedStatusFilter || isWorkflowStatusFilter
+
+  const baseWhere = isAdmin ? {} : { user_id: userId }
+
+  if (trimmedSearch) {
+    const like = `%${trimmedSearch}%`
+    const [matchedTemplates, matchedUsers, matchedPlants] = await Promise.all([
+      TemplateMasterModel.findAll({
+        where: { template_name: { [Op.like]: like } },
+        attributes: ['_id'],
+      }),
+      UserModel.findAll({
+        where: {
+          [Op.or]: [
+            { full_name: { [Op.like]: like } },
+            { email: { [Op.like]: like } },
+            { user_id: { [Op.like]: like } },
+          ],
+        },
+        attributes: ['_id'],
+      }),
+      PlantModel.findAll({
+        where: {
+          [Op.or]: [{ plant_name: { [Op.like]: like } }, { plant_code: { [Op.like]: like } }],
+        },
+        attributes: ['_id'],
+      }),
+    ])
+
+    const templateIds = matchedTemplates.map((t) => t._id)
+    const userIds = matchedUsers.map((u) => u._id)
+    const plantIds = matchedPlants.map((p) => p._id)
+
+    if (!templateIds.length && !userIds.length && !plantIds.length) {
+      return []
+    }
+
+    baseWhere[Op.and] = [
+      {
+        [Op.or]: [
+          templateIds.length ? { template_id: { [Op.in]: templateIds } } : null,
+          userIds.length ? { user_id: { [Op.in]: userIds } } : null,
+          plantIds.length ? { plant_id: { [Op.in]: plantIds } } : null,
+        ].filter(Boolean),
+      },
+    ]
+  }
+
+  const submissionQuery = {
+    where: baseWhere,
     include: [
       { model: PlantModel, as: 'plant', attributes: ['_id', 'plant_name', 'plant_code'] },
       { model: UserModel, as: 'user', attributes: ['_id', 'full_name', 'email', 'user_id'] },
     ],
     attributes: ['_id', 'template_id', 'user_id', 'status', 'createdAt', 'plant_id'],
-    limit,
-    offset: skip,
-  })
+  }
+
+  if (!usePostFilter) {
+    submissionQuery.limit = limit
+    submissionQuery.offset = skip
+  }
+
+  const SubmitionData = await TemplateSubmissionModel.findAll(submissionQuery)
 
   const templateIds = [...new Set(SubmitionData.map((item) => item.template_id))]
   const userIds = [...new Set(SubmitionData.map((item) => item.user_id))]
@@ -479,7 +561,14 @@ export const getTemplateStatusListService = async (
   // Fetch all templates with workflow
   const templateDataByIds = await TemplateMasterModel.findAll({
     where: { _id: { [Op.in]: templateIds } },
-    attributes: ['_id', 'template_name', 'template_type', 'is_active', 'workflow_id'],
+    attributes: [
+      '_id',
+      'template_name',
+      'template_type',
+      'is_active',
+      'workflow_id',
+      'assigned_users',
+    ],
     include: [
       {
         model: WorkflowModel,
@@ -670,7 +759,7 @@ export const getTemplateStatusListService = async (
   })
 
   // Build final response
-  return SubmitionData.map((item) => {
+  const finalData = SubmitionData.map((item) => {
     const template = templateMap.get(item.template_id)
     const currentUser = userMap.get(item.user_id)
 
@@ -749,6 +838,11 @@ export const getTemplateStatusListService = async (
         return approvalJson
       })
 
+    const assignedStatus = template
+      ? template.assigned_users?.find((u) => String(u.user_id) === String(item.user_id))?.status ||
+        null
+      : null
+
     return {
       ...item.dataValues,
       template_data: template
@@ -758,6 +852,7 @@ export const getTemplateStatusListService = async (
           }
         : null,
       approval: filteredApprovals,
+      assigned_status: assignedStatus,
       template_status:
         workflowWithApprovals?.workflow.length > 0
           ? filteredApprovals.filter(
@@ -770,6 +865,18 @@ export const getTemplateStatusListService = async (
           : 'pending',
     }
   })
+
+  if (isAssignedStatusFilter) {
+    const filtered = finalData.filter((row) => row.assigned_status === normalizedStatus)
+    return filtered.slice(skip, skip + limit)
+  }
+
+  if (isWorkflowStatusFilter) {
+    const filtered = finalData.filter((row) => row.template_status === normalizedStatus)
+    return filtered.slice(skip, skip + limit)
+  }
+
+  return finalData
 }
 
 export const assignWorkflowToTemplateService = async (templateId, workflowId) => {
