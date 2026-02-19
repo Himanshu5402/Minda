@@ -56,9 +56,21 @@ PlcDataModel.prototype.toJSON = function () {
     }
   }
 
-  const parameters = { ...extra };
-  delete parameters.product; // product top-level pe, parameters m nahi
-  delete parameters.PRODUCTION_COUNT; // production_count product ke neeche, parameters m nahi
+  const parameters = {};
+  
+  // Only include primitive values from extra_data (exclude nested objects)
+  for (const [key, value] of Object.entries(extra)) {
+    // Skip nested objects and arrays
+    if (key === "product" || key === "PRODUCTION_COUNT" || key === "Barcode_details") {
+      continue; // Skip these - they're handled separately
+    }
+    // Only include primitive values (string, number, boolean, null)
+    if (value !== null && typeof value !== "object") {
+      parameters[key] = value;
+    }
+  }
+  
+  // Add mapped parameters from DB columns
   for (const [dbCol, paramKey] of Object.entries(PARAMS_MAP)) {
     if (values[dbCol] !== undefined && values[dbCol] !== null) {
       parameters[paramKey] = values[dbCol];
@@ -66,6 +78,7 @@ PlcDataModel.prototype.toJSON = function () {
   }
 
   const product = values.product ?? extra.product ?? null;
+  const Barcode_details = extra.Barcode_details ?? null;
 
   return {
     _id: values._id,
@@ -81,6 +94,7 @@ PlcDataModel.prototype.toJSON = function () {
     production_count: values.production_count ?? extra.PRODUCTION_COUNT ?? null,
     machine: values.model ? { model: values.model } : {},
     parameters,
+    Barcode_details,
     created_at: values.created_at,
     updated_at: values.updated_at,
   };

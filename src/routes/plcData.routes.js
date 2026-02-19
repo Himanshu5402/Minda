@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createPlcData,
   getAllPlcData,
+  getPlcReport,
   getPlcDataById,
   updatePlcData,
   deletePlcData,
@@ -16,6 +17,7 @@ router.post("/", createPlcData);
 router.get("/analytics/error-distribution", getPlcErrorDistribution);
 router.get("/analytics/downtime-by-machine", getPlcDowntimeByMachine);
 router.get("/analytics/time-distribution", getPlcTimeDistribution);
+router.get("/report", getPlcReport);
 router.get("/", getAllPlcData);
 router.get("", getAllPlcData);
 router.get("/:id", getPlcDataById);
