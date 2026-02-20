@@ -161,6 +161,9 @@ export const getPlcReport = AsyncHandler(async (req, res) => {
         flatParams.error_status ||
         flatParams.error_code ||
         null,
+      // PLC-data API se aane wale saare parameters (machine se) — Report ki Parameters column ke liye
+      parameters: flatParams,
+      timestamp: json.timestamp || null,
     };
   });
 
