@@ -145,8 +145,8 @@ export const getPlcReport = AsyncHandler(async (req, res) => {
         (json.machine && json.machine.model) ||
         json.model ||
         null,
-      Shift: flatParams.SHIFT || flatParams.shift || null,
-      Operator: flatParams.OPERATOR || flatParams.operator || null,
+      Shift: flatParams.SHIFT || flatParams.Shift || flatParams.shift || null,
+      Operator: flatParams.Operatorname || flatParams.OPERATORNAME || flatParams.OPERATOR || flatParams.operator || null,
       Date: json.timestamp || null,
       LineNumber: json.linenumber ?? null,
       LineName: flatParams.linename || flatParams.line_name || null,
