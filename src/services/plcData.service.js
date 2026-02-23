@@ -102,34 +102,27 @@ export const createPlcDataService = async (data) => {
   const flat = flattenPayload(data);
   const { known, extra } = extractKnownAndExtra(flat);
 
-  const { stop_time, device_id, status, timestamp } = known;
-
-  // Jab stop_time aaye: pehle wali open session row update karo (session close)
-  if (stop_time && device_id) {
-    const openRow = await PlcDataModel.findOne({
+  // Jab stop_time aaye: next row (stopped row) mein production_count pata hona chahiye – last running se le aao agar payload mein nahi hai
+  const { stop_time, device_id, production_count: payloadProd } = known;
+  if (stop_time && device_id && (payloadProd == null || payloadProd === "")) {
+    const lastRunning = await PlcDataModel.findOne({
       where: { device_id, stop_time: null },
       order: [["start_time", "DESC"]],
+      attributes: ["production_count"],
     });
-    if (openRow) {
-      const updatePayload = {
-        stop_time,
-        extra_data: { ...(openRow.extra_data || {}), ...extra },
-      };
-      if (status != null) updatePayload.status = status;
-      if (timestamp != null) updatePayload.timestamp = timestamp;
-      await openRow.update(updatePayload);
-      await attachProductToPlcData(openRow);
+    if (lastRunning && lastRunning.production_count != null) {
+      known.production_count = lastRunning.production_count;
     }
   }
 
-  // Har payload ko DB mein save karo (1 sec, 10 sec jo bhi machine bheje – saara data save)
+  // Har payload (running ya stopped) – sirf nayi row create karo, kisi purani row ko update mat karo
   const plcData = await PlcDataModel.create({
     ...known,
     extra_data: Object.keys(extra).length ? extra : null,
   });
 
   await attachProductToPlcData(plcData);
-  return plcData;
+  return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true });
 };
 
 export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
