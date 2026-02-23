@@ -105,15 +105,15 @@ export const createPlcDataService = async (data) => {
   const { known, extra } = extractKnownAndExtra(flat)
 
   // Jab stop_time aaye: next row (stopped row) mein production_count pata hona chahiye – last running se le aao agar payload mein nahi hai
-  const { stop_time, device_id, production_count: payloadProd } = known
-  if (stop_time && device_id && (payloadProd == null || payloadProd === '')) {
+  const { stop_time, device_id, production_count: payloadProd } = known;
+  if (stop_time && device_id && (payloadProd == null || payloadProd === "")) {
     const lastRunning = await PlcDataModel.findOne({
       where: { device_id, stop_time: null },
-      order: [['start_time', 'DESC']],
-      attributes: ['production_count'],
-    })
+      order: [["start_time", "DESC"]],
+      attributes: ["production_count"],
+    });
     if (lastRunning && lastRunning.production_count != null) {
-      known.production_count = lastRunning.production_count
+      known.production_count = lastRunning.production_count;
     }
   }
 
@@ -123,9 +123,9 @@ export const createPlcDataService = async (data) => {
     extra_data: Object.keys(extra).length ? extra : null,
   })
 
-  await attachProductToPlcData(plcData)
-  return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true })
-}
+  await attachProductToPlcData(plcData);
+  return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true });
+};
 
 export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
   const where = {}
