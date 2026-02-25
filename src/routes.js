@@ -51,7 +51,7 @@ routes.use("/workflow", Authorization, WorkflowRoutes);
 routes.use("/template-submission", Authorization, TemplateSubmissionRoutes);
 routes.get("/plc-data/ping", (_req, res) => res.status(200).json({ message: "plc-data route reachable" }));
 routes.post("/plc-data", createPlcData); // PLC machines push data - no auth required
-routes.use("/plc-data", Authorization, PlcDataRoutes);
+routes.use("/plc-data", PlcDataRoutes);
 routes.use("/plc-products", Authorization, PlcProductRoutes);
 routes.use("/quality-check", Authorization, QualityCheckRoutes);
 routes.use("/status-history", Authorization, StatusHistourRoutes)
