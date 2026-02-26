@@ -162,15 +162,15 @@ export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
     }
   }
 
-  const page = Math.max(pagination.page || 1, 1)
-  const limit = Math.min(pagination.limit || 10, 5000)
-  const offset = (page - 1) * limit
+  // const page = Math.max(pagination.page || 1, 1)
+  // const limit = Math.min(pagination.limit || 10, 5000)
+  // const offset = (page - 1) * limit
 
   const plcDataList = await PlcDataModel.findAll({
     where,
     order: [['created_at', 'DESC']],
-    limit,
-    offset,
+    // limit,
+    // offset,
   })
 
   await attachProductToPlcData(plcDataList)
