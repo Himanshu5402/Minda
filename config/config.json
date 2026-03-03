@@ -2,7 +2,7 @@
   "development": {
     "username": "sa",
     "password": "Admin@123",
-    "database": "minda",
+    "database": "MuskanDb",
     "host": "localhost",
     "dialect": "mssql"
   },
@@ -12,7 +12,6 @@
     "database": "JPMDO",
     "host": "localhost",
     "dialect": "mssql",
-    "port" :"49680"
+    "port": "49680"
   }
 }
-
