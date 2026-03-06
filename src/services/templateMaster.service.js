@@ -853,15 +853,17 @@ export const getTemplateStatusListService = async (
       approval: filteredApprovals,
       assigned_status: assignedStatus,
       template_status:
-        workflowWithApprovals?.workflow.length > 0
-          ? filteredApprovals.filter(
-              (it) =>
-                it.current_stage === workflowWithApprovals?.workflow.length - 1 &&
-                it.status === 'approved',
-            ).length > 0
-            ? 'approved'
-            : 'in-progress'
-          : 'pending',
+  workflowWithApprovals?.workflow.length > 0
+    ? filteredApprovals.some(it => it.status === "rejected")
+      ? "rejected"
+      : filteredApprovals.filter(
+          (it) =>
+            it.current_stage === workflowWithApprovals?.workflow.length - 1 &&
+            it.status === "approved"
+        ).length > 0
+      ? "approved"
+      : "in-progress"
+    : "pending"
     }
   })
 
