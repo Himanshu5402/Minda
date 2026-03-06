@@ -130,6 +130,7 @@ export const getTemplateByIdService = async (
 
   // convert Sequelize instance → plain object
   const plainResult = result.get({ plain: true })
+  console.log("plainresult",plainResult)
 
   // sort fields
   if (Array.isArray(plainResult.fields)) {
@@ -160,9 +161,7 @@ export const getTemplateByIdService = async (
   }
 
   if (
-    plainResult?.assignedUser?.additional_plants !== null &&
-    plainResult?.assignedUser?.additional_plants !== undefined &&
-    plainResult?.assignedUser?.additional_plants.length > 0
+    plainResult?.assignedUser?.additional_plants === null || plainResult?.assignedUser?.additional_plants !== null
   ) {
     plainResult.assignedUser.additional_plants = [
       ...plainResult.assignedUser.additional_plants,
