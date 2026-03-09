@@ -172,9 +172,10 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
       {
         model: UserModel,
         as: 'user',
-        attributes: ['_id', 'full_name', 'email', 'user_id'],
+        attributes: ['_id', 'full_name', 'email', 'user_id', 'hod_id'],
         include: [
           { model: RoleModel, as: 'userRole', attributes: ['_id', 'name'], required: false },
+          { model: UserModel, as: 'hod', attributes: ['_id', 'full_name', 'user_id'], required: false },
         ],
       },
       { model: PlantModel, as: 'plant', attributes: ['_id', 'plant_name', 'plant_code'] },
