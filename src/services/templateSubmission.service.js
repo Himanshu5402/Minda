@@ -169,14 +169,7 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
         model: TemplateMasterModel,
         as: 'template',
         attributes: ['_id', 'template_name', 'template_type'],
-        include: [
-    {
-      model: WorkflowModel,
-      as: 'workflow',
-      attributes: ['_id', 'workflow'], // workflow array hai jisme group aur stage info hai
-      required: false,
-    }
-  ]
+        
       },
       {
         model: UserModel,
