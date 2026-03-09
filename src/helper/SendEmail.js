@@ -61,3 +61,42 @@ export const sendTemplateApprovalNotification = async (
     }
   );
 };
+
+// Final decision notifications
+export const sendTemplateApprovedNotification = async (
+  recipientEmail,
+  recipientName,
+  templateName
+)=> {
+  if (!recipientEmail || !templateName) return;
+  await SendMail(
+    "templateApproved",
+    {
+      recipientName: recipientName || "User",
+      templateName,
+    },
+    {
+      email: recipientEmail,
+      subject: `Template Approved: ${templateName}`,
+    }
+  );
+};
+
+export const sendTemplateRejectedNotification = async (
+  recipientEmail,
+  recipientName,
+  templateName
+)=> {
+  if (!recipientEmail || !templateName) return;
+  await SendMail(
+    "templateRejected",
+    {
+      recipientName: recipientName || "User",
+      templateName,
+    },
+    {
+      email: recipientEmail,
+      subject: `Template Rejected: ${templateName}`,
+    }
+  );
+};

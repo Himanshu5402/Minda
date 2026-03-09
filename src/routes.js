@@ -25,6 +25,7 @@ import { createPlcData } from "./controller/plcData.controller.js";
 import PlcProductRoutes from "./routes/plcProduct.routes.js";
 import QualityCheckRoutes from "./routes/qualityCheck.routes.js";
 import StatusHistourRoutes from "./routes/statusHistory.routes.js"
+import EmailRoutes from "./routes/email.routes.js"
 
 
 
@@ -55,6 +56,7 @@ routes.use("/plc-data", PlcDataRoutes);
 routes.use("/plc-products", Authorization, PlcProductRoutes);
 routes.use("/quality-check", Authorization, QualityCheckRoutes);
 routes.use("/status-history", Authorization, StatusHistourRoutes)
+routes.use("/email", Authorization, EmailRoutes)
 
 
 

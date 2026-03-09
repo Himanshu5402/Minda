@@ -249,9 +249,7 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
       }
 
       const allFields = templateFieldMap.get(submission.template_id) || []
-      const assignedFields = isAdmin
-        ? allFields
-        : allFields.filter((f) => f.type === 'User' || f.type === null || f.type === undefined)
+      const assignedFields = allFields
 
       return {
         ...submission,
@@ -261,9 +259,7 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
     }
 
     const allFields = templateFieldMap.get(submission.template_id) || []
-    const assignedFields = isAdmin
-      ? allFields
-      : allFields.filter((f) => f.type === 'User' || f.type === null || f.type === undefined)
+    const assignedFields = allFields
 
     return {
       ...submission,

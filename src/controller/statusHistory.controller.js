@@ -10,7 +10,7 @@ import {
   updateAssignedUserStatusService,
 } from '../services/templateMaster.service.js'
 import { GetAdmin, GetUsersByIdService } from '../services/users.service.js'
-import { sendTemplateApprovalNotification } from '../helper/SendEmail.js'
+import { sendTemplateApprovalNotification, sendTemplateApprovedNotification, sendTemplateRejectedNotification } from '../helper/SendEmail.js'
 import {
   CreateTemplateApprovalNotification,
   singleNotification,
@@ -45,6 +45,19 @@ export const createStatusHistory = AsyncHandler(async (req, res) => {
         where: { _id: result?.dataValues?.submission_id },
       },
     )
+    // Notify assignee: fully approved
+    try {
+      const assignee = check?.user_id ? await GetUsersByIdService(check.user_id) : null
+      if (assignee?.email) {
+        await sendTemplateApprovedNotification(
+          assignee.email,
+          assignee.full_name || assignee.email,
+          check?.template?.template_name || 'Template'
+        )
+      }
+    } catch (e) {
+      logger.error('Final approval email error:', e)
+    }
   }
 
   if (check?.status === 'approved' && check?.template_id && check?.user_id && check?.approved_by) {
@@ -79,6 +92,19 @@ export const createStatusHistory = AsyncHandler(async (req, res) => {
         where: { _id: result?.dataValues?.submission_id },
       },
     )
+    // Notify assignee: rejected
+    try {
+      const assignee = check?.user_id ? await GetUsersByIdService(check.user_id) : null
+      if (assignee?.email) {
+        await sendTemplateRejectedNotification(
+          assignee.email,
+          assignee.full_name || assignee.email,
+          check?.template?.template_name || 'Template'
+        )
+      }
+    } catch (e) {
+      logger.error('Rejection email error:', e)
+    }
   }
 
   if (check?.status === 'reassigned' && check?.template_id && check?.user_id) {
