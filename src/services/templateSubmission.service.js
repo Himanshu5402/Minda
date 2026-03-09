@@ -1,6 +1,7 @@
 import { TemplateSubmissionModel } from '../models/templateSubmission.model.js'
 import { TemplateMasterModel } from '../models/templateMaster.model.js'
 import { UserModel } from '../models/user.modal.js'
+import { RoleModel } from '../models/role.modal.js'
 import { BadRequestError, NotFoundError } from '../utils/errorHandler.js'
 import { PlantModel } from '../models/plant.modal.js'
 import { TemplateFieldModel } from '../models/templateField.model.js'
@@ -168,7 +169,14 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
         as: 'template',
         attributes: ['_id', 'template_name', 'template_type'],
       },
-      { model: UserModel, as: 'user', attributes: ['_id', 'full_name', 'email', 'user_id'] },
+      {
+        model: UserModel,
+        as: 'user',
+        attributes: ['_id', 'full_name', 'email', 'user_id'],
+        include: [
+          { model: RoleModel, as: 'userRole', attributes: ['_id', 'name'], required: false },
+        ],
+      },
       { model: PlantModel, as: 'plant', attributes: ['_id', 'plant_name', 'plant_code'] },
     ],
     attributes: [
