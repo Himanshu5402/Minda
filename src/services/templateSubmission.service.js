@@ -2,6 +2,7 @@ import { TemplateSubmissionModel } from '../models/templateSubmission.model.js'
 import { TemplateMasterModel } from '../models/templateMaster.model.js'
 import { UserModel } from '../models/user.modal.js'
 import { RoleModel } from '../models/role.modal.js'
+import { WorkflowApprovalModel } from '../models/workflowApproval.model.js'
 import { BadRequestError, NotFoundError } from '../utils/errorHandler.js'
 import { PlantModel } from '../models/plant.modal.js'
 import { TemplateFieldModel } from '../models/templateField.model.js'
@@ -179,6 +180,16 @@ export const getTemplateSubmitionDataService = async (isAdmin, user_id, limit, s
         ],
       },
       { model: PlantModel, as: 'plant', attributes: ['_id', 'plant_name', 'plant_code'] },
+      {
+        model: WorkflowApprovalModel,
+        as: 'approvals',
+        where: { status: 'approved' },
+        attributes: ['approved_by', 'current_stage', 'createdAt'],
+        include: [
+          { model: UserModel, as: 'approvedBy', attributes: ['_id', 'full_name', 'user_id'], required: false },
+        ],
+        required: false,
+      },
     ],
     attributes: [
       '_id',
