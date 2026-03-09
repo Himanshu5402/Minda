@@ -160,20 +160,24 @@ export const getTemplateByIdService = async (
     }
   }
 
-  if (
-    plainResult?.assignedUser?.additional_plants === null || plainResult?.assignedUser?.additional_plants !== null
-  ) {
-    plainResult.assignedUser.additional_plants = [
-      ...plainResult.assignedUser.additional_plants,
-      plainResult.assignedUser.employee_plant,
-    ]
+  if (plainResult.assignedUser) {
+    const additionalPlants = Array.isArray(plainResult.assignedUser.additional_plants)
+      ? plainResult.assignedUser.additional_plants
+      : []
 
-    plainResult.plant_option = await PlantModel.findAll({
-      where: {
-        _id: { [Op.in]: plainResult.assignedUser.additional_plants },
-      },
-      attributes: ['_id', 'plant_name', 'plant_code'],
-    })
+    const allPlantIds = [...additionalPlants, plainResult.assignedUser.employee_plant].filter(Boolean)
+    plainResult.assignedUser.additional_plants = allPlantIds
+
+    if (allPlantIds.length > 0) {
+      plainResult.plant_option = await PlantModel.findAll({
+        where: {
+          _id: { [Op.in]: allPlantIds },
+        },
+        attributes: ['_id', 'plant_name', 'plant_code'],
+      })
+    } else {
+      plainResult.plant_option = []
+    }
   }
 
   plainResult.fields = await Promise.all(
