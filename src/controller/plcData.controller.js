@@ -1,5 +1,6 @@
 import { StatusCodes } from "http-status-codes";
 import { AsyncHandler } from "../utils/asyncHandler.js";
+import PDFDocument from "pdfkit-table";
 import {
   createPlcDataService,
   getAllPlcDataService,
@@ -9,6 +10,7 @@ import {
   getPlcErrorDistributionService,
   getPlcDowntimeByMachineService,
   getPlcTimeDistributionService,
+  getMachineStoppageService,
 } from "../services/plcData.service.js";
 
 export const createPlcData = AsyncHandler(async (req, res) => {
@@ -16,6 +18,143 @@ export const createPlcData = AsyncHandler(async (req, res) => {
   res.status(StatusCodes.CREATED).json({
     message: "PLC Data created successfully",
     data: result,
+  });
+});
+
+export const downloadMachineStoppagePdf = AsyncHandler(async (req, res) => {
+  const { machine_name, from_date, to_date } = req.query;
+
+  const filters = {};
+  if (machine_name) filters.machine_name = machine_name;
+  if (from_date) filters.from_date = from_date;
+  if (to_date) filters.to_date = to_date;
+
+  // Set response headers for PDF download
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="machine-stoppage-summary.pdf"'
+  );
+
+  const doc = new PDFDocument({ margin: 30, size: "A4" });
+  doc.pipe(res);
+
+  // Helper to draw header and footer on every page
+  const drawPageLayout = () => {
+    const oldFontSize = doc._fontSize;
+    const oldFillColor = doc._fillColor;
+
+    // Header Logo (Top Left)
+    doc.fontSize(20).fillColor("black").font("Helvetica-Bold").text("JPMG", 30, 20);
+
+    // Footer (Bottom Center)
+    doc.fontSize(8).fillColor("grey").font("Helvetica").text(
+      "Developed & Maintained by © 2026 Deepnap Softech",
+      0,
+      doc.page.height - 30,
+      { align: "center", width: doc.page.width }
+    );
+
+    // Restore state
+    doc.fontSize(oldFontSize || 10).fillColor(oldFillColor || "black");
+  };
+
+  // Draw for the first page
+  drawPageLayout();
+
+  // Draw for subsequent pages
+  doc.on("pageAdded", () => {
+    drawPageLayout();
+  });
+
+  // Table Configuration
+  const table = {
+    title: { label: "Machine Stoppage Summary", fontSize: 18, font: "Helvetica-Bold" },
+    subtitle: { label: `Generated on: ${new Date().toLocaleString()}`, fontSize: 10, font: "Helvetica" },
+    headers: [
+      { label: "Machine Name", property: "machine_name", width: 100 },
+      { label: "Machine ID", property: "device_id", width: 80 },
+      { label: "Start Time", property: "start_time", width: 110 },
+      { label: "Stop Time", property: "stop_time", width: 110 },
+      { label: "Duration (Min)", property: "stopped_duration", width: 70 },
+      { label: "Status", property: "status", width: 65 },
+    ],
+    datas: [],
+  };
+
+  let page = 1;
+  const limit = 1000;
+  let hasMore = true;
+
+  // Move down to avoid overlapping with header logo
+  doc.moveDown(4);
+
+  while (hasMore) {
+    const result = await getMachineStoppageService(filters, { page, limit });
+    const chunk = result.data.map((item) => {
+      // Handle product which could be a string or object
+      let machineName = item.product;
+      if (machineName && typeof machineName === "object") {
+        machineName = machineName.material_description || machineName.material_code || machineName.part_no || machineName.model;
+      }
+
+      return {
+        machine_name: machineName || item.device_id || "N/A",
+        device_id: item.device_id || "N/A",
+        start_time: item.Start_time ? new Date(item.Start_time).toLocaleString() : "N/A",
+        stop_time: item.Stop_time ? new Date(item.Stop_time).toLocaleString() : "N/A",
+        stopped_duration: item.stopped_duration || 0,
+        status: item.Status || "N/A",
+      };
+    });
+
+    if (chunk.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    // Use pdfkit-table's table method
+    // Note: We only show title/subtitle on the first page
+    await doc.table({
+      ...table,
+      title: page === 1 ? table.title : null,
+      subtitle: page === 1 ? table.subtitle : null,
+      datas: chunk,
+    }, {
+      prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10).fillColor("black"),
+      prepareRow: (row, indexColumn, indexRow, rectRow, rectCell) => {
+        doc.font("Helvetica").fontSize(9).fillColor("black");
+      },
+    });
+
+    if (chunk.length < limit) {
+      hasMore = false;
+    } else {
+      page++;
+    }
+  }
+
+  doc.end();
+});
+
+export const getMachineStoppage = AsyncHandler(async (req, res) => {
+  const { machine_name, from_date, to_date, page, limit } = req.query;
+
+  const filters = {};
+  if (machine_name) filters.machine_name = machine_name;
+  if (from_date) filters.from_date = from_date;
+  if (to_date) filters.to_date = to_date;
+
+  const pagination = {
+    page: parseInt(page) || 1,
+    limit: parseInt(limit) || 10,
+  };
+
+  const result = await getMachineStoppageService(filters, pagination);
+
+  res.status(StatusCodes.OK).json({
+    message: "Machine stoppage data fetched successfully",
+    ...result,
   });
 });
 
@@ -70,10 +209,6 @@ export const getPlcReport = AsyncHandler(async (req, res) => {
   if (endDate) filters.endDate = endDate;
   if (timestampStart) filters.timestampStart = timestampStart;
   if (timestampEnd) filters.timestampEnd = timestampEnd;
-
-  // const pageNumber = Math.max(parseInt(page) || 1, 1);
-  // const pageSize = Math.min(parseInt(limit) || 1000, 5000);
-  // const offset = (pageNumber - 1) * pageSize;
 
   const list = await getAllPlcDataService(filters);
 

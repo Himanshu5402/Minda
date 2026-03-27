@@ -95,6 +95,7 @@ PlcDataModel.prototype.toJSON = function () {
     machine: values.model ? { model: values.model } : {},
     parameters,
     Barcode_details,
+    stopped_duration: values.stopped_duration,
     created_at: values.created_at,
     updated_at: values.updated_at,
   };
