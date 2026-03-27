@@ -2,6 +2,7 @@ import { PlcDataModel } from '../models/plcData.model.js'
 import { PlcProductModel } from '../models/plcProduct.model.js'
 import { NotFoundError } from '../utils/errorHandler.js'
 import { Op, Sequelize } from 'sequelize'
+import { sequelize } from "../sequelize.js";
 
 /** Attach product name (from plc_products) to plc data by device_id = machine_name */
 async function attachProductToPlcData(plcDataOrList) {
@@ -175,6 +176,163 @@ export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
 
   await attachProductToPlcData(plcDataList)
   return plcDataList
+}
+
+export const getMachineStoppageService = async (filters = {}, pagination = {}) => {
+  const page = Math.max(pagination.page || 1, 1)
+  const limit = Math.min(pagination.limit || 10, 100)
+  const offset = (page - 1) * limit
+
+  let whereClause = 'WHERE stop_time IS NOT NULL'
+  const replacements = { offset, limit }
+
+  if (filters.machine_name) {
+    whereClause += ' AND (device_id LIKE :machine_name OR model LIKE :machine_name)'
+    replacements.machine_name = `%${filters.machine_name}%`
+  }
+
+  if (filters.from_date && filters.to_date) {
+    whereClause += ' AND start_time BETWEEN :from_date AND :to_date'
+    replacements.from_date = filters.from_date
+    replacements.to_date = filters.to_date
+  }
+
+  // Updated query to calculate gap-based stoppage duration between consecutive records
+  const query = `
+    WITH UniqueData AS (
+      SELECT *,
+             ROW_NUMBER() OVER (
+               PARTITION BY device_id, start_time, stop_time
+               ORDER BY start_time DESC
+             ) AS rn
+      FROM plc_data
+      ${whereClause}
+    ),
+    FilteredData AS (
+      SELECT *
+      FROM UniqueData
+      WHERE rn = 1
+    ),
+    GapCalculated AS (
+      SELECT *,
+             LAG(stop_time) OVER (
+               PARTITION BY device_id
+               ORDER BY start_time
+             ) AS prev_stop_time
+      FROM FilteredData
+    ),
+    FinalData AS (
+      SELECT *,
+             CASE 
+               WHEN prev_stop_time IS NOT NULL AND DATEDIFF(SECOND, prev_stop_time, start_time) > 0 
+               THEN DATEDIFF(MINUTE, prev_stop_time, start_time) 
+               ELSE 0 
+             END AS stopped_duration
+      FROM GapCalculated
+    )
+    SELECT *
+    FROM FinalData
+    WHERE prev_stop_time IS NOT NULL -- Follow user logic to ignore first record
+    ORDER BY start_time DESC
+    OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY;
+  `
+
+  const countQuery = `
+    WITH UniqueData AS (
+      SELECT device_id, start_time, stop_time,
+             ROW_NUMBER() OVER (
+               PARTITION BY device_id, start_time, stop_time
+               ORDER BY start_time DESC
+             ) AS rn
+      FROM plc_data
+      ${whereClause}
+    ),
+    FilteredData AS (
+      SELECT *
+      FROM UniqueData
+      WHERE rn = 1
+    ),
+    GapCalculated AS (
+      SELECT *,
+             LAG(stop_time) OVER (
+               PARTITION BY device_id
+               ORDER BY start_time
+             ) AS prev_stop_time
+      FROM FilteredData
+    )
+    SELECT COUNT(*) as total
+    FROM GapCalculated
+    WHERE prev_stop_time IS NOT NULL;
+  `
+
+  const [data, [countResult], [totalMachinesResult], [totalStoppedMachinesResult], allDevicesResult] = await Promise.all([
+    sequelize.query(query, {
+      replacements,
+      type: Sequelize.QueryTypes.SELECT,
+      model: PlcDataModel,
+      mapToModel: true,
+    }),
+    sequelize.query(countQuery, {
+      replacements,
+      type: Sequelize.QueryTypes.SELECT,
+    }),
+    sequelize.query('SELECT COUNT(DISTINCT device_id) as count FROM plc_data', {
+      type: Sequelize.QueryTypes.SELECT,
+    }),
+    sequelize.query(
+      `WITH UniqueData AS (
+         SELECT device_id, start_time, stop_time,
+                ROW_NUMBER() OVER (
+                  PARTITION BY device_id, start_time, stop_time
+                  ORDER BY start_time DESC
+                ) AS rn
+         FROM plc_data
+         ${whereClause}
+       ),
+       FilteredData AS (
+         SELECT *
+         FROM UniqueData
+         WHERE rn = 1
+       ),
+       GapCalculated AS (
+         SELECT device_id,
+                LAG(stop_time) OVER (
+                  PARTITION BY device_id
+                  ORDER BY start_time
+                ) AS prev_stop_time
+         FROM FilteredData
+       )
+       SELECT COUNT(DISTINCT device_id) as count
+       FROM GapCalculated
+       WHERE prev_stop_time IS NOT NULL;`,
+      {
+        replacements,
+        type: Sequelize.QueryTypes.SELECT,
+      }
+    ),
+    sequelize.query('SELECT DISTINCT device_id FROM plc_data WHERE device_id IS NOT NULL', {
+      type: Sequelize.QueryTypes.SELECT,
+    }),
+  ])
+
+  const total = countResult?.total || 0
+  const totalMachines = totalMachinesResult?.count || 0
+  const totalStoppedMachines = totalStoppedMachinesResult?.count || 0
+  const allDevices = allDevicesResult?.map((d) => d.device_id) || []
+  await attachProductToPlcData(data)
+
+  return {
+    data: data.map((item) => (item.toJSON ? item.toJSON() : item)),
+    totalMachines,
+    totalStoppedMachines,
+    allDevices,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+  }
 }
 
 export const getPlcDataByIdService = async (id) => {
