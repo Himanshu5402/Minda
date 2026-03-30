@@ -269,7 +269,7 @@ export const downloadPlcReportPdf = AsyncHandler(async (req, res) => {
         company:       String(row.Company        ?? "—"),
         plant:         String(row.Plant          ?? "—"),
         product:       String(row.Product        ?? "—"),
-        prod_count:    String(row.CalculatedProduction === 0 ? "0 (Err)" : row.ProductionCount ?? "—"),
+        prod_count:    String(row.CalculatedProduction === 0 ? "0 (Err)" : "1"),
         model:         String(row.Model          ?? "—"),
         shift:         String(row.Shift          ?? "—"),
         operator:      String(row.Operator       ?? "—"),
@@ -303,12 +303,12 @@ export const downloadPlcReportPdf = AsyncHandler(async (req, res) => {
           datas: chunk,
         },
         {
-          prepareHeader: () => doc.font("Helvetica-Bold").fontSize(7).fillColor("white"),
+          prepareHeader: () => doc.font("Helvetica-Bold").fontSize(7).fillColor("blue"),
           prepareRow:    () => doc.font("Helvetica").fontSize(7).fillColor("black"),
           startY: doc.y,
           columnSpacing: 3,
           padding: 4,
-          headerColor: "#3b4fa8",  // blue header
+          headerColor: "#000000",  // blue header
           striped: true,
           stripedColors: ["#ffffff", "#f0f4ff"],
         }
@@ -388,7 +388,6 @@ export const downloadPlcReportExcel = AsyncHandler(async (req, res) => {
       { header: "Error",              key: "Error",           width: 12 },
       { header: "Rod",                key: "Rod",             width: 10 },
       { header: "Striker",            key: "Striker",         width: 10 },
-      { header: "Parameters",         key: "Parameters",      width: 40 },
     ];
 
     // ── Style header row ──
@@ -415,7 +414,7 @@ export const downloadPlcReportExcel = AsyncHandler(async (req, res) => {
         Company:         row.Company        ?? "—",
         Plant:           row.Plant          ?? "—",
         Product:         row.Product        ?? "—",
-        ProductionCount: row.CalculatedProduction === 0 ? "0 (Machine Error)" : (row.ProductionCount ?? "—"),
+        ProductionCount: row.CalculatedProduction === 0 ? "0 (Machine Error)" : "1",
         Model:           row.Model          ?? "—",
         Shift:           row.Shift          ?? "—",
         Operator:        row.Operator       ?? "—",
@@ -427,9 +426,7 @@ export const downloadPlcReportExcel = AsyncHandler(async (req, res) => {
         BarcodeDateTime: row.BarcodeDateTime ? new Date(row.BarcodeDateTime).toLocaleString("en-GB") : "—",
         Error:           row.Error          ?? "—",
         Rod:             row.Rod            ?? "—",
-        Striker:         row.Striker        ?? "—",
-        Parameters:      row.parameters && Object.keys(row.parameters).length > 0
-                           ? JSON.stringify(row.parameters) : "—",
+        Striker:         row.Striker        ?? "—"
       });
 
       dataRow.eachCell((cell, colNumber) => {
