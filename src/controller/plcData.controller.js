@@ -194,131 +194,55 @@ export const getAllPlcData = AsyncHandler(async (req, res) => {
 // PLC Report API for report module table
 export const getPlcReport = AsyncHandler(async (req, res) => {
   const {
-    // DB-level filters
     device_id,
-    model,
+    model,        // ← ab yahi model filter hai
+    status,
     company_name,
     plant_name,
-    // In-memory filters (values are inside JSON blobs)
-    product,
-    status,           // "ok" | "error" | "all"
-    // Duration / date range
-    duration,         // "today" | "week" | "month" | "custom" | "all"
+    page  = 1,
+    limit = 10,
+    duration,
     startDate,
     endDate,
     startTime,
     endTime,
-    // Legacy direct timestamp range (kept for backward compat)
     timestampStart,
     timestampEnd,
-    page,
-    limit,
   } = req.query;
 
   const filters = {};
-  if (device_id) filters.device_id = device_id;
-  if (model) filters.model = model;
-  if (status) filters.status = status;
+
+  if (device_id)    filters.device_id    = device_id;
   if (company_name) filters.company_name = company_name;
-  if (plant_name) filters.plant_name = plant_name;
-  if (startDate) filters.startDate = startDate;
-  if (endDate) filters.endDate = endDate;
+  if (plant_name)   filters.plant_name   = plant_name;
+  if (model)        filters.model        = model;        // ← seedha model
+  if (status && status !== "all") filters.status = status;
   if (timestampStart) filters.timestampStart = timestampStart;
-  if (timestampEnd) filters.timestampEnd = timestampEnd;
+  if (timestampEnd)   filters.timestampEnd   = timestampEnd;
 
-  const list = await getAllPlcDataService(filters);
+  if (duration && duration !== "all") {
+    filters.duration  = duration;
+    filters.startDate = startDate;
+    filters.endDate   = endDate;
+    filters.startTime = startTime;
+    filters.endTime   = endTime;
+  }
 
-  const report = list.map((row) => {
-    const json = row.toJSON();
-    
-    // Ensure parameters is a plain object (not nested objects)
-    let params = json.parameters || {};
-    if (typeof params === "string") {
-      try {
-        params = JSON.parse(params);
-      } catch (_) {
-        params = {};
-      }
-    }
-    
-    // Filter out nested objects from parameters (keep only primitive values)
-    const flatParams = {};
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== null && typeof value !== "object") {
-        flatParams[key] = value;
-      }
-    }
-    
-    // Extract Barcode_details properly
-    let barcode = json.Barcode_details || null;
-    if (typeof barcode === "string") {
-      try {
-        barcode = JSON.parse(barcode);
-      } catch (_) {
-        barcode = null;
-      }
-    }
-    if (!barcode || typeof barcode !== "object") {
-      barcode = {};
-    }
-
-    // Extract product properly
-    let product = json.product;
-    if (typeof product === "string") {
-      try {
-        product = JSON.parse(product);
-      } catch (_) {
-        product = null;
-      }
-    }
-
-    return {
-      Company: json.companyname ?? null,
-      Plant: json.plantname ?? null,
-      Product:
-        (product &&
-          typeof product === "object" &&
-          (product.material_code ||
-            product.part_no ||
-            product.model)) ||
-        (typeof product === "string" ? product : null) ||
-        null,
-      Model:
-        (product &&
-          typeof product === "object" &&
-          product.model) ||
-        (json.machine && json.machine.model) ||
-        json.model ||
-        null,
-      Shift: flatParams.SHIFT || flatParams.Shift || flatParams.shift || null,
-      Operator: flatParams.Operatorname || flatParams.OPERATORNAME || flatParams.OPERATOR || flatParams.operator || null,
-      Date: json.timestamp || null,
-      LineNumber: json.linenumber ?? null,
-      LineName: flatParams.linename || flatParams.line_name || null,
-      BarcodeTag: barcode.BarcodeID || null,
-      BarcodeStatus: barcode.BarcodeStatus || null,
-      BarcodeDateTime: barcode.BarcodeDateTime || null,
-      Rod: flatParams.ROD || flatParams.rod || null,
-      Striker: flatParams.STRIKER || flatParams.striker || null,
-      Error:
-        flatParams.ERROR_STATUS ||
-        flatParams.ERROR_CODE ||
-        flatParams.error_status ||
-        flatParams.error_code ||
-        null,
-      ProductionCount: json.production_count ?? flatParams.PRODUCTION_COUNT ?? flatParams.production_count ?? null,
-      // PLC-data API se aane wale saare parameters (machine se) — Report ki Parameters column ke liye
-      parameters: flatParams,
-      timestamp: json.timestamp || null,
-    };
-  });
+  const result = await getAllPlcReport(filters, { page, limit });
 
   res.status(StatusCodes.OK).json({
     message: "PLC Report fetched successfully",
-    data: report,
+    data: {
+      rows:             result.data,
+      total:            result.total,
+      page:             result.page,
+      limit:            result.limit,
+      totalPages:       result.totalPages,
+      summary:          result.summary,
+      productSummaries: result.productSummaries,
+    },
   });
 });
-
 
 export const getPlcDataById = AsyncHandler(async (req, res) => {
   const result = await getPlcDataByIdService(req.params.id)

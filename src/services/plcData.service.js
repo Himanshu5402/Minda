@@ -362,47 +362,35 @@ function buildDbWhere(filters, Op) {
   const where = {};
 
   if (filters.device_id)    where.device_id    = { [Op.like]: `%${filters.device_id}%` };
-  if (filters.company_name) where.company_name = { [Op.like]: `%${filters.company_name}%` };
-  if (filters.plant_name)   where.plant_name   = { [Op.like]: `%${filters.plant_name}%` };
-  if (filters.model)        where.model        = { [Op.like]: `%${filters.model}%` };
+  if (filters.company_name) where.company_name = filters.company_name; // ← exact match
+  if (filters.plant_name)   where.plant_name   = filters.plant_name;   // ← exact match
 
-  // ── date/time range ──
+  // duration/date filters same as before
   const { duration, startDate, endDate, startTime, endTime } = filters;
 
   if (duration === "today") {
     const start = new Date(); start.setHours(0, 0, 0, 0);
     where.timestamp = { [Op.gte]: start };
-
   } else if (duration === "week") {
     const start = new Date();
     start.setDate(start.getDate() - start.getDay());
     start.setHours(0, 0, 0, 0);
     where.timestamp = { [Op.gte]: start };
-
   } else if (duration === "month") {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    where.timestamp = { [Op.gte]: start };
-
+    where.timestamp = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) };
   } else if (duration === "custom") {
-    const start = startDate
-      ? new Date(`${startDate}T${startTime || "00:00"}:00`)
-      : null;
-    const end = endDate
-      ? new Date(`${endDate}T${endTime || "23:59"}:59`)
-      : null;
-    if (start && end)  where.timestamp = { [Op.between]: [start, end] };
-    else if (start)    where.timestamp = { [Op.gte]: start };
-    else if (end)      where.timestamp = { [Op.lte]: end };
-
+    const start = startDate ? new Date(`${startDate}T${startTime || "00:00"}:00`) : null;
+    const end   = endDate   ? new Date(`${endDate}T${endTime || "23:59"}:59`)     : null;
+    if (start && end) where.timestamp = { [Op.between]: [start, end] };
+    else if (start)   where.timestamp = { [Op.gte]: start };
+    else if (end)     where.timestamp = { [Op.lte]: end };
   } else if (filters.timestampStart && filters.timestampEnd) {
-    // legacy support
     where.timestamp = { [Op.between]: [filters.timestampStart, filters.timestampEnd] };
   }
 
   return where;
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main service
 // ─────────────────────────────────────────────────────────────────────────────
@@ -431,17 +419,19 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
 
   // 4️⃣  In-memory filters (values live inside JSON blobs, can't use SQL)
   if (filters.model) {
-    deduped = deduped.filter((r) => r.Model === filters.model);
-  }
+  deduped = deduped.filter((r) =>
+    String(r.Model ?? "").trim() === String(filters.model).trim() // ← exact match
+  );
+}
 
   if (filters.status) {
-    const sel = filters.status.trim().toLowerCase();
-    deduped = deduped.filter((r) => {
-      const err = String(r.Error ?? "").trim().toLowerCase();
-      if (sel === "ok")    return err === "ok";
-      if (sel === "error") return err !== "ok";
-      return true;
-    });
+  const sel = filters.status.trim().toLowerCase();
+  deduped = deduped.filter((r) => {
+    const err = String(r.Error ?? "").trim().toLowerCase();
+    if (sel === "ok")    return err === "ok";
+    if (sel === "error") return err !== "ok";
+    return true;
+  });
   }
 
   // 5️⃣  Sort DESC — latest on top (for display)
