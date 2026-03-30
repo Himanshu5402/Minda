@@ -801,45 +801,61 @@ export const getPlcDowntimeByMachineService = async (filters = {}) => {
   // Let's assume status='Stopped'.
   // But to be safe, let's include anything that is not 'Running'.
   // Actually, let's stick to what the user implies: downtime.
-  where.status = {
-    [Op.or]: [
-      { [Op.like]: '%Stop%' },
-      { [Op.like]: '%Down%' },
-      { [Op.like]: '%Error%' },
-      { [Op.like]: '%Alarm%' },
-    ],
-  }
+  const downtimeQuery = `
+    WITH UniqueData AS (
+      SELECT *,
+             ROW_NUMBER() OVER (
+               PARTITION BY device_id, start_time, stop_time
+               ORDER BY start_time DESC
+             ) AS rn
+      FROM plc_data
+      WHERE stop_time IS NOT NULL
+        ${filters.startDate && filters.endDate ? `AND start_time BETWEEN '${filters.startDate}' AND '${filters.endDate}'` : ''}
+        ${filters.deviceId ? `AND device_id LIKE '%${filters.deviceId}%'` : ''}
+        ${filters.model ? `AND model LIKE '%${filters.model}%'` : ''}
+        ${filters.companyName ? `AND company_name LIKE '%${filters.companyName}%'` : ''}
+        ${filters.plantName ? `AND plant_name LIKE '%${filters.plantName}%'` : ''}
+    ),
+    FilteredData AS (
+      SELECT *
+      FROM UniqueData
+      WHERE rn = 1
+    ),
+    GapCalculated AS (
+      SELECT *,
+             LAG(stop_time) OVER (
+               PARTITION BY device_id
+               ORDER BY start_time
+             ) AS prev_stop_time
+      FROM FilteredData
+    ),
+    FinalData AS (
+      SELECT *,
+             CASE 
+               WHEN prev_stop_time IS NOT NULL AND DATEDIFF(SECOND, prev_stop_time, start_time) > 0 
+               THEN DATEDIFF(MINUTE, prev_stop_time, start_time) 
+               ELSE 0 
+             END AS stopped_duration_minutes
+      FROM GapCalculated
+    )
+    SELECT 
+      device_id AS name,
+      SUM(stopped_duration_minutes) AS value
+    FROM FinalData
+    WHERE prev_stop_time IS NOT NULL
+    GROUP BY device_id
+    ORDER BY value DESC;
+  `;
 
-  // 3. Sum (stop_time - start_time) in seconds/minutes
-  // SQL Server: DATEDIFF(SECOND, start_time, stop_time)
-
-  const results = await PlcDataModel.findAll({
-    attributes: [
-      ['device_id', 'name'],
-      [
-        Sequelize.fn('SUM', Sequelize.literal('DATEDIFF(SECOND, start_time, stop_time)')),
-        'value_seconds',
-      ],
-    ],
-    where: {
-      ...where,
-      start_time: { [Op.ne]: null },
-      stop_time: { [Op.ne]: null },
-    },
-    group: ['device_id'],
-    order: [[Sequelize.literal('value_seconds'), 'DESC']],
+  const results = await sequelize.query(downtimeQuery, {
+    type: Sequelize.QueryTypes.SELECT,
     raw: true,
-  })
+  });
 
-  // Convert seconds to hours for display (or keep as minutes/seconds depending on magnitude)
-  // User chart says "183 h", so let's return hours (or minutes and let frontend format).
-  // Let's return hours rounded to 2 decimal for better precision.
-  return results
-    .map((r) => ({
-      name: r.name,
-      value: parseFloat((r.value_seconds / 3600).toFixed(2)), // Seconds to Hours
-    }))
-    .filter((r) => r.value > 0)
+  return results.map((r) => ({
+    name: r.name,
+    value: r.value,
+  }));
 }
 
 export const getPlcTimeDistributionService = async (filters = {}) => {
