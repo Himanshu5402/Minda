@@ -211,8 +211,6 @@ export const getPlcReport = AsyncHandler(async (req, res) => {
     // Legacy direct timestamp range (kept for backward compat)
     timestampStart,
     timestampEnd,
-    company_name,
-    plant_name,
     page,
     limit,
   } = req.query;
