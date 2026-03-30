@@ -38,6 +38,7 @@
     "pdfkit-table": "^0.1.99",
     "sequelize": "^6.37.7",
     "socket.io": "^4.8.3",
+    "svg-to-pdfkit": "^0.1.8",
     "tedious": "^18.0.0",
     "winston": "^3.19.0",
     "yup": "^1.7.1"

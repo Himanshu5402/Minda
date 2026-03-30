@@ -45,11 +45,11 @@ export const downloadMachineStoppagePdf = AsyncHandler(async (req, res) => {
     const oldFillColor = doc._fillColor;
 
     // Header Logo (Top Left)
-    doc.fontSize(20).fillColor("black").font("Helvetica-Bold").text("JPMG", 30, 20);
+    // doc.fontSize(20).fillColor("black").font("Helvetica-Bold").text("JPMG", 30, 20);
 
     // Footer (Bottom Center)
-    doc.fontSize(8).fillColor("grey").font("Helvetica").text(
-      "Developed & Maintained by © 2026 Deepnap Softech",
+    doc.fontSize(30).fillColor("grey").font("Helvetica").text(
+      "JPMG Machine Stoppage Summary",
       0,
       doc.page.height - 30,
       { align: "center", width: doc.page.width }
