@@ -11,6 +11,8 @@ import {
   getPlcErrorDistribution,
   getPlcDowntimeByMachine,
   getPlcTimeDistribution,
+  downloadPlcReportExcel,
+  downloadPlcReportPdf
 } from "../controller/plcData.controller.js";
 
 const router = Router();
@@ -21,6 +23,8 @@ router.get("/download-pdf", downloadMachineStoppagePdf);
 router.get("/analytics/error-distribution", getPlcErrorDistribution);
 router.get("/analytics/downtime-by-machine", getPlcDowntimeByMachine);
 router.get("/analytics/time-distribution", getPlcTimeDistribution);
+router.get("/report/download-pdf",   downloadPlcReportPdf);
+router.get("/report/download-excel", downloadPlcReportExcel);
 router.get("/report", getPlcReport);
 router.get("/", getAllPlcData);
 router.get("", getAllPlcData);
