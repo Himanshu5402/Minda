@@ -386,3 +386,20 @@ export const getPlcTimeDistribution = AsyncHandler(async (req, res) => {
     data: result,
   })
 })
+
+export const getMachinePerformance = AsyncHandler(async (req, res) => {
+  const { startDate, endDate, companyName, plantName, deviceId, model } = req.query
+  const filters = {}
+  if (startDate) filters.startDate = startDate
+  if (endDate) filters.endDate = endDate
+  if (companyName) filters.companyName = companyName
+  if (plantName) filters.plantName = plantName
+  if (deviceId) filters.deviceId = deviceId
+  if (model) filters.model = model
+
+  const result = await getMachinePerformanceService(filters)
+  res.status(StatusCodes.OK).json({
+    message: 'Machine Performance fetched successfully',
+    data: result,
+  })
+})
