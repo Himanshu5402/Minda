@@ -989,3 +989,97 @@ export const getPlcTimeDistributionService = async (filters = {}) => {
     idleTime: Math.round(totalIdleMins),
   }
 }
+
+export const getMachinePerformanceService = async (filters = {}) => {
+  const { startDate, endDate, companyName, plantName, deviceId, model } = filters;
+
+  // We use the SQL logic provided by the user, adapted for our schema and including filters.
+  // The logic identifies Best/Worst machines based on Running Time (Running -> Stopped transitions) 
+  // and Production Count.
+
+  const performanceQuery = `
+    WITH StatusData AS ( 
+      SELECT device_id, model, status, timestamp, production_count,
+             LAG(status) OVER (PARTITION BY device_id ORDER BY timestamp) AS prev_status, 
+             LAG(timestamp) OVER (PARTITION BY device_id ORDER BY timestamp) AS prev_time 
+      FROM plc_data 
+      WHERE 1=1
+      ${startDate && endDate ? `AND timestamp BETWEEN :startDate AND :endDate` : ''}
+      ${companyName ? `AND company_name = :companyName` : ''}
+      ${plantName ? `AND plant_name = :plantName` : ''}
+      ${deviceId ? `AND device_id = :deviceId` : ''}
+      ${model ? `AND model = :model` : ''}
+    ), 
+    
+    RunningTimeCalc AS ( 
+      SELECT 
+        device_id, 
+        model as machine_name, 
+        DATEDIFF(MINUTE, prev_time, timestamp) AS running_minutes, 
+        production_count 
+      FROM StatusData 
+      WHERE prev_status = 'Running' AND status = 'Stopped' 
+    ), 
+    
+    Aggregated AS ( 
+      SELECT 
+        device_id, 
+        machine_name, 
+        SUM(ISNULL(running_minutes, 0)) AS total_running_time, 
+        SUM(ISNULL(production_count, 0)) AS total_production 
+      FROM RunningTimeCalc 
+      GROUP BY device_id, machine_name 
+    ) 
+    SELECT * FROM Aggregated;
+  `;
+
+  const replacements = {};
+  if (startDate) replacements.startDate = startDate;
+  if (endDate) replacements.endDate = endDate;
+  if (companyName) replacements.companyName = companyName;
+  if (plantName) replacements.plantName = plantName;
+  if (deviceId) replacements.deviceId = deviceId;
+  if (model) replacements.model = model;
+
+  const results = await sequelize.query(performanceQuery, {
+    replacements,
+    type: Sequelize.QueryTypes.SELECT,
+    raw: true,
+  });
+
+  if (!results || results.length === 0) {
+    return {
+      best_machine: null,
+      worst_machine: null,
+    };
+  }
+
+  // Find Best Machine: MAX(total_running_time) then MAX(total_production)
+  const bestMachine = [...results].sort((a, b) => {
+    if (b.total_running_time !== a.total_running_time) {
+      return b.total_running_time - a.total_running_time;
+    }
+    return b.total_production - a.total_production;
+  })[0];
+
+  // Find Worst Machine: MIN(total_running_time) then MIN(total_production)
+  const worstMachine = [...results].sort((a, b) => {
+    if (a.total_running_time !== b.total_running_time) {
+      return a.total_running_time - b.total_running_time;
+    }
+    return a.total_production - b.total_production;
+  })[0];
+
+  return {
+    best_machine: {
+      machine_name: bestMachine.machine_name,
+      total_running_time: bestMachine.total_running_time,
+      total_production: bestMachine.total_production,
+    },
+    worst_machine: {
+      machine_name: worstMachine.machine_name,
+      total_running_time: worstMachine.total_running_time,
+      total_production: worstMachine.total_production,
+    },
+  };
+};
