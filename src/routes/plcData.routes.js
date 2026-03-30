@@ -12,6 +12,8 @@ import {
   getPlcDowntimeByMachine,
   getPlcTimeDistribution,
   getMachinePerformance,
+  getPlcDowntimeByError,
+  getPlcDowntimeByErrorStatus,
   downloadPlcReportExcel,
   downloadPlcReportPdf
 } from "../controller/plcData.controller.js";
@@ -24,6 +26,8 @@ router.get("/download-pdf", downloadMachineStoppagePdf);
 router.get("/analytics/error-distribution", getPlcErrorDistribution);
 router.get("/analytics/downtime-by-machine", getPlcDowntimeByMachine);
 router.get("/analytics/time-distribution", getPlcTimeDistribution);
+router.get("/analytics/downtime-by-error", getPlcDowntimeByError);
+router.get("/analytics/downtime-by-error-status", getPlcDowntimeByErrorStatus);
 router.get("/machine-performance", getMachinePerformance);
 router.get("/report/download-pdf",   downloadPlcReportPdf);
 router.get("/report/download-excel", downloadPlcReportExcel);

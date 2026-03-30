@@ -88,6 +88,18 @@ function extractKnownAndExtra(flat) {
       if (DATE_FIELDS.includes(dbCol) && val) val = new Date(val)
       known[dbCol] = val ?? null
     } else {
+      // Normalization for Error key (case-insensitive)
+      if (key.toLowerCase() === 'error') {
+        extra['Error'] = value
+        continue
+      }
+
+      // Normalization for ERROR_STATUS key (case-insensitive)
+      if (key.toLowerCase() === 'error_status') {
+        extra['ERROR_STATUS'] = value
+        continue
+      }
+
       // Dynamic field - jo bhi aaya, store
       let val = value
       if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
@@ -1082,4 +1094,117 @@ export const getMachinePerformanceService = async (filters = {}) => {
       total_production: worstMachine.total_production,
     },
   };
+};
+
+export const getPlcDowntimeByErrorService = async (filters = {}) => {
+  const { startDate, endDate, companyName, plantName, deviceId, model } = filters;
+  
+  let whereClause = "WHERE status = 'Stopped' AND stop_time IS NOT NULL AND JSON_VALUE(extra_data, '$.Error') IS NOT NULL AND JSON_VALUE(extra_data, '$.Error') <> ''";
+  const replacements = {};
+
+  if (startDate && endDate) {
+    whereClause += " AND start_time BETWEEN :startDate AND :endDate";
+    replacements.startDate = startDate;
+    replacements.endDate = endDate;
+  }
+
+  if (companyName) {
+    whereClause += " AND company_name LIKE :companyName";
+    replacements.companyName = `%${companyName}%`;
+  }
+
+  if (plantName) {
+    whereClause += " AND plant_name LIKE :plantName";
+    replacements.plantName = `%${plantName}%`;
+  }
+
+  if (deviceId) {
+    whereClause += " AND device_id LIKE :deviceId";
+    replacements.deviceId = `%${deviceId}%`;
+  }
+
+  if (model) {
+    whereClause += " AND model LIKE :model";
+    replacements.model = `%${model}%`;
+  }
+
+  const query = `
+    SELECT 
+      UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.Error')))) AS error_name, 
+      SUM(DATEDIFF(MINUTE, start_time, stop_time)) AS total_downtime 
+    FROM plc_data 
+    ${whereClause}
+    GROUP BY UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.Error')))) 
+    ORDER BY total_downtime DESC;
+  `;
+
+  const results = await sequelize.query(query, {
+    replacements,
+    type: Sequelize.QueryTypes.SELECT,
+    raw: true,
+  });
+
+  return results.map(r => ({
+    error_name: r.error_name,
+    total_downtime: r.total_downtime
+  }));
+};
+
+export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
+  const { startDate, endDate, companyName, plantName, deviceId, model } = filters;
+  
+  let whereClause = `
+    WHERE status = 'Stopped' 
+      AND stop_time IS NOT NULL 
+      AND JSON_VALUE(extra_data, '$.ERROR_STATUS') IS NOT NULL 
+      AND LOWER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) <> 'ok'
+  `;
+  const replacements = {};
+
+  if (startDate && endDate) {
+    whereClause += " AND start_time BETWEEN :startDate AND :endDate";
+    replacements.startDate = startDate;
+    replacements.endDate = endDate;
+  }
+
+  if (companyName) {
+    whereClause += " AND company_name LIKE :companyName";
+    replacements.companyName = `%${companyName}%`;
+  }
+
+  if (plantName) {
+    whereClause += " AND plant_name LIKE :plantName";
+    replacements.plantName = `%${plantName}%`;
+  }
+
+  if (deviceId) {
+    whereClause += " AND device_id LIKE :deviceId";
+    replacements.deviceId = `%${deviceId}%`;
+  }
+
+  if (model) {
+    whereClause += " AND model LIKE :model";
+    replacements.model = `%${model}%`;
+  }
+
+  const query = `
+    SELECT 
+      UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) AS error_status, 
+      SUM(DATEDIFF(MINUTE, start_time, stop_time)) AS total_downtime 
+    FROM plc_data 
+    ${whereClause}
+    GROUP BY UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) 
+    ORDER BY total_downtime DESC;
+  `;
+
+  const results = await sequelize.query(query, {
+    replacements,
+    type: Sequelize.QueryTypes.SELECT,
+    raw: true,
+  });
+
+  return results.map(r => ({
+    error_status: r.error_status,
+    total_downtime: r.total_downtime
+  }));
 };
