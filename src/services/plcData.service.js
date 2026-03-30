@@ -100,33 +100,141 @@ function extractKnownAndExtra(flat) {
   }
   return { known, extra }
 }
-
 export const createPlcDataService = async (data) => {
   const flat = flattenPayload(data)
   const { known, extra } = extractKnownAndExtra(flat)
 
-  // Jab stop_time aaye: next row (stopped row) mein production_count pata hona chahiye – last running se le aao agar payload mein nahi hai
-  const { stop_time, device_id, production_count: payloadProd } = known;
-  if (stop_time && device_id && (payloadProd == null || payloadProd === "")) {
+  const { stop_time, device_id, production_count: payloadProd } = known
+
+  // STOP logic
+  if (stop_time && device_id && (payloadProd == null || payloadProd === '')) {
     const lastRunning = await PlcDataModel.findOne({
       where: { device_id, stop_time: null },
-      order: [["start_time", "DESC"]],
-      attributes: ["production_count"],
-    });
-    if (lastRunning && lastRunning.production_count != null) {
-      known.production_count = lastRunning.production_count;
+      order: [['start_time', 'DESC']],
+      attributes: ['production_count'],
+      raw: true,
+    })
+
+    if (lastRunning?.production_count != null) {
+      known.production_count = lastRunning.production_count
     }
   }
 
-  // Har payload (running ya stopped) – sirf nayi row create karo, kisi purani row ko update mat karo
-  const plcData = await PlcDataModel.create({
-    ...known,
-    extra_data: Object.keys(extra).length ? extra : null,
+  // Last record
+  const lastRecord = await PlcDataModel.findOne({
+    where: { device_id },
+    order: [['created_at', 'DESC']],
   })
 
-  await attachProductToPlcData(plcData);
-  return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true });
-};
+  // Build current record
+  const currentRecord = PlcDataModel.build({
+    ...known,
+    extra_data: Object.keys(extra).length ? extra : {},
+  }).toJSON()
+
+  // Function to remove ignored fields
+  const clean = (obj) => {
+    const { _id, timestamp, created_at, updated_at, ...rest } = obj
+    return rest
+  }
+
+  // Sort object keys for JSON.stringify
+  const stringifySorted = (obj) => {
+    if (obj === null || typeof obj !== 'object') return obj
+    if (Array.isArray(obj)) return `[${obj.map(stringifySorted).join(',')}]`
+    return `{${Object.keys(obj)
+      .sort()
+      .map((k) => `"${k}":${stringifySorted(obj[k])}`)
+      .join(',')}}`
+  }
+
+  const cleanCurrent = clean(currentRecord)
+  const cleanLast = lastRecord ? clean(lastRecord.toJSON()) : null
+
+  console.log('=== KNOWN ===', JSON.stringify(known, null, 2))
+  console.log('=== EXTRA ===', JSON.stringify(extra, null, 2))
+  console.log('=== LAST RECORD ===', JSON.stringify(cleanLast, null, 2))
+
+  // Compare using JSON.stringify
+  if (lastRecord && stringifySorted(cleanCurrent) === stringifySorted(cleanLast)) {
+    console.log('⚠️ No change detected → skipping insert')
+    return lastRecord.toJSON()
+  }
+
+  // Insert new row
+  const plcData = await PlcDataModel.create({
+    ...known,
+    extra_data: Object.keys(extra).length ? extra : {},
+  })
+
+  if (typeof attachProductToPlcData === 'function') {
+    await attachProductToPlcData(plcData)
+  }
+
+  return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true })
+}
+// export const createPlcDataService = async (data) => {
+//   const flat = flattenPayload(data);
+//   const { known, extra } = extractKnownAndExtra(flat);
+
+//   const { stop_time, device_id, production_count: payloadProd } = known;
+
+//   if (stop_time && device_id && (payloadProd == null || payloadProd === "")) {
+//     const lastRunning = await PlcDataModel.findOne({
+//       where: { device_id, stop_time: null },
+//       order: [["start_time", "DESC"]],
+//       attributes: ["production_count"],
+//     });
+//     if (lastRunning?.production_count != null) {
+//       known.production_count = lastRunning.production_count;
+//     }
+//   }
+
+//   const lastRecord = await PlcDataModel.findOne({
+//     where: { device_id },
+//     order: [["created_at", "DESC"]],
+//     raw: true,
+//   });
+
+//   // ⬇️ SIRF YE LINES ADD KARO AUR OUTPUT DIKHAO MUJHE
+//   console.log("=== KNOWN ===", JSON.stringify(known, null, 2));
+//   console.log("=== EXTRA ===", JSON.stringify(extra, null, 2));
+//   console.log("=== LAST RECORD ===", JSON.stringify(lastRecord, null, 2));
+
+//   const plcData = await PlcDataModel.create({
+//     ...known,
+//     extra_data: Object.keys(extra).length ? extra : null,
+//   });
+
+//   await attachProductToPlcData(plcData);
+//   return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true });
+// };
+// export const createPlcDataService = async (data) => {
+//   const flat = flattenPayload(data)
+//   const { known, extra } = extractKnownAndExtra(flat)
+
+//   // Jab stop_time aaye: next row (stopped row) mein production_count pata hona chahiye – last running se le aao agar payload mein nahi hai
+//   const { stop_time, device_id, production_count: payloadProd } = known;
+//   if (stop_time && device_id && (payloadProd == null || payloadProd === "")) {
+//     const lastRunning = await PlcDataModel.findOne({
+//       where: { device_id, stop_time: null },
+//       order: [["start_time", "DESC"]],
+//       attributes: ["production_count"],
+//     });
+//     if (lastRunning && lastRunning.production_count != null) {
+//       known.production_count = lastRunning.production_count;
+//     }
+//   }
+
+//   // Har payload (running ya stopped) – sirf nayi row create karo, kisi purani row ko update mat karo
+//   const plcData = await PlcDataModel.create({
+//     ...known,
+//     extra_data: Object.keys(extra).length ? extra : null,
+//   })
+
+//   await attachProductToPlcData(plcData);
+//   return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true });
+// };
 
 export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
   const where = {}
