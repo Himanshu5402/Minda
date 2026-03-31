@@ -33,7 +33,6 @@ router.get("/report/download-pdf",   downloadPlcReportPdf);
 router.get("/report/download-excel", downloadPlcReportExcel);
 router.get("/report", getPlcReport);
 router.get("/", getAllPlcData);
-router.get("", getAllPlcData);
 router.get("/:id", getPlcDataById);
 router.put("/:id", updatePlcData);
 router.delete("/:id", deletePlcData);
