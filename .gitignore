@@ -22,3 +22,6 @@ out
 logs
 config
 **/config.json
+
+# Ignore specific script
+scripts/migrate-plc-data.js
