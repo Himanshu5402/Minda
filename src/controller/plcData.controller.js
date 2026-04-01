@@ -16,6 +16,7 @@ import {
   getMachineStoppageService,
   getPlcDowntimeByErrorService,
   getPlcDowntimeByErrorStatusService,
+  getPlcListingService,
 } from '../services/plcData.service.js'
 
 export const createPlcData = AsyncHandler(async (req, res) => {
@@ -543,6 +544,18 @@ export const getPlcDataById = AsyncHandler(async (req, res) => {
   })
 })
 
+
+export const getPlcListing = async (req, res, next) => {
+  try {
+    const data = await getPlcListingService(req.query)
+    res.status(200).json({
+      success: true,
+      data,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
 export const updatePlcData = AsyncHandler(async (req, res) => {
   const result = await updatePlcDataService(req.params.id, req.body)
   res.status(StatusCodes.OK).json({

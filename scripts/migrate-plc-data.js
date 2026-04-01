@@ -134,4 +134,4 @@ async function migratePlcData() {
   }
 }
 
-migratePlcData();
+migratePlcData()

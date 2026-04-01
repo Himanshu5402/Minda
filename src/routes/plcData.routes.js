@@ -15,7 +15,8 @@ import {
   getPlcDowntimeByError,
   getPlcDowntimeByErrorStatus,
   downloadPlcReportExcel,
-  downloadPlcReportPdf
+  downloadPlcReportPdf,
+  getPlcListing
 } from "../controller/plcData.controller.js";
 
 const router = Router();
@@ -34,6 +35,7 @@ router.get("/report/download-pdf",   downloadPlcReportPdf);
 router.get("/report/download-excel", downloadPlcReportExcel);
 router.get("/report", getPlcReport);
 router.get("/", getAllPlcData);
+router.get("/listing", getPlcListing);
 router.get("/:id", getPlcDataById);
 router.put("/:id", updatePlcData);
 router.delete("/:id", deletePlcData);

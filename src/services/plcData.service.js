@@ -517,7 +517,45 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     productSummaries,
   };
 };
+export const getPlcListingService = async (filters = {}) => {
+  const where = buildDbWhere(filters, Op)
 
+  if (filters.company_name) where.company_name = filters.company_name
+  if (filters.plant_name) where.plant_name = filters.plant_name
+  if (filters.device_id) {
+    where.device_id = { [Op.like]: `%${filters.device_id}%` }
+  }
+
+  const data = await PlcDataModel.findAll({
+    where,
+    order: [['created_at', 'DESC']],
+  })
+
+  await attachProductToPlcData(data)
+
+  // 🔥 Latest per device logic (frontend se yaha shift)
+  const deviceMap = new Map()
+
+  data.forEach((item) => {
+    const deviceId = item.device_id || 'Unknown'
+
+    const existing = deviceMap.get(deviceId)
+
+    if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
+      deviceMap.set(deviceId, item)
+    }
+  })
+
+  let result = Array.from(deviceMap.values())
+
+  // 🔥 Status filter (backend me)
+  if (filters.status) {
+    const sel = filters.status.toLowerCase()
+    result = result.filter((r) => (r.status || '').toLowerCase() === sel)
+  }
+
+  return result
+}
 export const getMachineStoppageService = async (filters = {}, pagination = {}) => {
   const page = Math.max(pagination.page || 1, 1)
   const limit = Math.min(pagination.limit || 10, 100)
@@ -605,7 +643,51 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     WHERE prev_stop_time IS NOT NULL;
   `
 
-  const [data, [countResult], [totalMachinesResult], [totalStoppedMachinesResult], allDevicesResult] = await Promise.all([
+  const totalDowntimeQuery = `
+    WITH UniqueData AS (
+      SELECT device_id, start_time, stop_time,
+             ROW_NUMBER() OVER (
+               PARTITION BY device_id, start_time, stop_time
+               ORDER BY start_time DESC
+             ) AS rn
+      FROM plc_data
+      ${whereClause}
+    ),
+    FilteredData AS (
+      SELECT *
+      FROM UniqueData
+      WHERE rn = 1
+    ),
+    GapCalculated AS (
+      SELECT *,
+             LAG(stop_time) OVER (
+               PARTITION BY device_id
+               ORDER BY start_time
+             ) AS prev_stop_time
+      FROM FilteredData
+    ),
+    FinalData AS (
+      SELECT *,
+             CASE 
+               WHEN prev_stop_time IS NOT NULL AND DATEDIFF(SECOND, prev_stop_time, start_time) > 0 
+               THEN DATEDIFF(MINUTE, prev_stop_time, start_time) 
+               ELSE 0 
+             END AS stopped_duration
+      FROM GapCalculated
+    )
+    SELECT SUM(stopped_duration) as totalDowntime
+    FROM FinalData
+    WHERE prev_stop_time IS NOT NULL;
+  `
+
+  const [
+    data,
+    [countResult],
+    [totalDowntimeResult],
+    [totalMachinesResult],
+    [totalStoppedMachinesResult],
+    allDevicesResult,
+  ] = await Promise.all([
     sequelize.query(query, {
       replacements,
       type: Sequelize.QueryTypes.SELECT,
@@ -613,6 +695,10 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
       mapToModel: true,
     }),
     sequelize.query(countQuery, {
+      replacements,
+      type: Sequelize.QueryTypes.SELECT,
+    }),
+    sequelize.query(totalDowntimeQuery, {
       replacements,
       type: Sequelize.QueryTypes.SELECT,
     }),
@@ -656,6 +742,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
   ])
 
   const total = countResult?.total || 0
+  const totalDowntime = totalDowntimeResult?.totalDowntime || 0
   const totalMachines = totalMachinesResult?.count || 0
   const totalStoppedMachines = totalStoppedMachinesResult?.count || 0
   const allDevices = allDevicesResult?.map((d) => d.device_id) || []
@@ -665,6 +752,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     data: data.map((item) => (item.toJSON ? item.toJSON() : item)),
     totalMachines,
     totalStoppedMachines,
+    totalDowntime,
     allDevices,
     pagination: {
       total,
