@@ -2,7 +2,7 @@ import { PlcDataModel } from '../models/plcData.model.js'
 import { PlcProductModel } from '../models/plcProduct.model.js'
 import { NotFoundError } from '../utils/errorHandler.js'
 import { Op, Sequelize } from 'sequelize'
-import { sequelize } from "../sequelize.js";
+import { sequelize } from '../sequelize.js'
 
 /** Attach product name (from plc_products) to plc data by device_id = machine_name */
 async function attachProductToPlcData(plcDataOrList) {
@@ -303,66 +303,87 @@ export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
 // ─────────────────────────────────────────────────────────────────────────────
 function mapRowToReport(json) {
   // ── parameters ──
-  let params = json.parameters || {};
-  if (typeof params === "string") {
-    try { params = JSON.parse(params); } catch (_) { params = {}; }
+  let params = json.parameters || {}
+  if (typeof params === 'string') {
+    try {
+      params = JSON.parse(params)
+    } catch (_) {
+      params = {}
+    }
   }
-  const flatParams = {};
+  const flatParams = {}
   for (const [k, v] of Object.entries(params)) {
-    if (v !== null && typeof v !== "object") flatParams[k] = v;
+    if (v !== null && typeof v !== 'object') flatParams[k] = v
   }
 
   // ── barcode ──
-  let barcode = json.Barcode_details || null;
-  if (typeof barcode === "string") {
-    try { barcode = JSON.parse(barcode); } catch (_) { barcode = null; }
+  let barcode = json.Barcode_details || null
+  if (typeof barcode === 'string') {
+    try {
+      barcode = JSON.parse(barcode)
+    } catch (_) {
+      barcode = null
+    }
   }
-  if (!barcode || typeof barcode !== "object") barcode = {};
+  if (!barcode || typeof barcode !== 'object') barcode = {}
 
   // ── product ──
-  let product = json.product;
-  if (typeof product === "string") {
-    try { product = JSON.parse(product); } catch (_) { product = null; }
+  let product = json.product
+  if (typeof product === 'string') {
+    try {
+      product = JSON.parse(product)
+    } catch (_) {
+      product = null
+    }
   }
 
   return {
-    Company:        json.companyname ?? null,
-    Plant:          json.plantname   ?? null,
+    Company: json.companyname ?? null,
+    Plant: json.plantname ?? null,
     Product:
-      (product && typeof product === "object" &&
+      (product &&
+        typeof product === 'object' &&
         (product.material_code || product.part_no || product.model)) ||
-      (typeof product === "string" ? product : null) ||
+      (typeof product === 'string' ? product : null) ||
       null,
     Model:
-      (product && typeof product === "object" && product.model) ||
+      (product && typeof product === 'object' && product.model) ||
       (json.machine && json.machine.model) ||
       json.model ||
       null,
-    Shift:     flatParams.SHIFT     || flatParams.Shift     || flatParams.shift     || null,
-    Operator:  flatParams.Operatorname || flatParams.OPERATORNAME || flatParams.OPERATOR || flatParams.operator || null,
-    Date:      json.timestamp || null,
+    Shift: flatParams.SHIFT || flatParams.Shift || flatParams.shift || null,
+    Operator:
+      flatParams.Operatorname ||
+      flatParams.OPERATORNAME ||
+      flatParams.OPERATOR ||
+      flatParams.operator ||
+      null,
+    Date: json.timestamp || null,
     LineNumber: json.linenumber ?? null,
-    LineName:  flatParams.linename  || flatParams.line_name  || null,
-    BarcodeTag:      barcode.BarcodeID       || null,
-    BarcodeStatus:   barcode.BarcodeStatus   || null,
+    LineName: flatParams.linename || flatParams.line_name || null,
+    BarcodeTag: barcode.BarcodeID || null,
+    BarcodeStatus: barcode.BarcodeStatus || null,
     BarcodeDateTime: barcode.BarcodeDateTime || null,
-    Rod:     flatParams.ROD     || flatParams.rod     || null,
+    Rod: flatParams.ROD || flatParams.rod || null,
     Striker: flatParams.STRIKER || flatParams.striker || null,
     Error:
-      flatParams.ERROR_STATUS || flatParams.ERROR_CODE ||
-      flatParams.error_status || flatParams.error_code || null,
-    ProductionCount:
-      json.production_count ??
-      flatParams.PRODUCTION_COUNT ??
-      flatParams.production_count ??
+      flatParams.ERROR_STATUS ||
+      flatParams.ERROR_CODE ||
+      flatParams.error_status ||
+      flatParams.error_code ||
       null,
+    ProductionCount:
+      json.production_count ?? flatParams.PRODUCTION_COUNT ?? flatParams.production_count ?? null,
     // CalculatedProduction is derived here so the frontend never has to
     CalculatedProduction:
-      String(flatParams.ERROR_STATUS || flatParams.error_status || "")
-        .trim().toLowerCase() === "ok" ? 1 : 0,
+      String(flatParams.ERROR_STATUS || flatParams.error_status || '')
+        .trim()
+        .toLowerCase() === 'ok'
+        ? 1
+        : 0,
     parameters: flatParams,
-    timestamp:  json.timestamp || null,
-  };
+    timestamp: json.timestamp || null,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -371,139 +392,159 @@ function mapRowToReport(json) {
 // after deduplication because those values are inside JSON blobs.
 // ─────────────────────────────────────────────────────────────────────────────
 function buildDbWhere(filters, Op) {
-  const where = {};
+  const where = {}
 
-  if (filters.device_id)    where.device_id    = { [Op.like]: `%${filters.device_id}%` };
-  if (filters.company_name) where.company_name = filters.company_name; // ← exact match
-  if (filters.plant_name)   where.plant_name   = filters.plant_name;   // ← exact match
+  if (filters.device_id) where.device_id = { [Op.like]: `%${filters.device_id}%` }
+  if (filters.company_name) where.company_name = filters.company_name // ← exact match
+  if (filters.plant_name) where.plant_name = filters.plant_name // ← exact match
 
   // duration/date filters same as before
-  const { duration, startDate, endDate, startTime, endTime } = filters;
+  const { duration, startDate, endDate, startTime, endTime } = filters
 
-  if (duration === "today") {
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    where.timestamp = { [Op.gte]: start };
-  } else if (duration === "week") {
-    const start = new Date();
-    start.setDate(start.getDate() - start.getDay());
-    start.setHours(0, 0, 0, 0);
-    where.timestamp = { [Op.gte]: start };
-  } else if (duration === "month") {
-    const now = new Date();
-    where.timestamp = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) };
-  } else if (duration === "custom") {
-    const start = startDate ? new Date(`${startDate}T${startTime || "00:00"}:00`) : null;
-    const end   = endDate   ? new Date(`${endDate}T${endTime || "23:59"}:59`)     : null;
-    if (start && end) where.timestamp = { [Op.between]: [start, end] };
-    else if (start)   where.timestamp = { [Op.gte]: start };
-    else if (end)     where.timestamp = { [Op.lte]: end };
+  if (duration === 'today') {
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    where.timestamp = { [Op.gte]: start }
+  } else if (duration === 'week') {
+    const start = new Date()
+    start.setDate(start.getDate() - start.getDay())
+    start.setHours(0, 0, 0, 0)
+    where.timestamp = { [Op.gte]: start }
+  } else if (duration === 'month') {
+    const now = new Date()
+    where.timestamp = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) }
+  } else if (duration === 'custom') {
+    const start = startDate ? new Date(`${startDate}T${startTime || '00:00'}:00`) : null
+    const end = endDate ? new Date(`${endDate}T${endTime || '23:59'}:59`) : null
+    if (start && end) where.timestamp = { [Op.between]: [start, end] }
+    else if (start) where.timestamp = { [Op.gte]: start }
+    else if (end) where.timestamp = { [Op.lte]: end }
   } else if (filters.timestampStart && filters.timestampEnd) {
-    where.timestamp = { [Op.between]: [filters.timestampStart, filters.timestampEnd] };
+    where.timestamp = { [Op.between]: [filters.timestampStart, filters.timestampEnd] }
   }
 
-  return where;
+  return where
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Main service
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAllPlcReport = async (filters = {}, pagination = {}) => {
   // 1️⃣  Fetch from DB — oldest first so dedup keeps the first scan per barcode
-  const where = buildDbWhere(filters, Op);
+  const where = buildDbWhere(filters, Op)
 
   const rawRows = await PlcDataModel.findAll({
     where,
-    order: [["timestamp", "ASC"]],
-  });
+    order: [['timestamp', 'ASC']],
+  })
 
-  await attachProductToPlcData(rawRows);
+  await attachProductToPlcData(rawRows)
 
   // 2️⃣  Map to clean report objects
-  const mapped = rawRows.map((r) => mapRowToReport(r.toJSON()));
+  const mapped = rawRows.map((r) => mapRowToReport(r.toJSON()))
 
   // 3️⃣  Deduplicate by BarcodeTag — keep FIRST (oldest) occurrence
-  const barcodeMap = new Map();
+  const barcodeMap = new Map()
   for (const row of mapped) {
     if (row.BarcodeTag && !barcodeMap.has(row.BarcodeTag)) {
-      barcodeMap.set(row.BarcodeTag, row);
+      barcodeMap.set(row.BarcodeTag, row)
     }
   }
-  let deduped = Array.from(barcodeMap.values());
+  let deduped = Array.from(barcodeMap.values())
 
   // 4️⃣  In-memory filters (values live inside JSON blobs, can't use SQL)
   if (filters.model) {
-  deduped = deduped.filter((r) =>
-    String(r.Model ?? "").trim() === String(filters.model).trim() // ← exact match
-  );
-}
+    deduped = deduped.filter(
+      (r) => String(r.Model ?? '').trim() === String(filters.model).trim(), // ← exact match
+    )
+  }
 
   if (filters.status) {
-  const sel = filters.status.trim().toLowerCase();
-  deduped = deduped.filter((r) => {
-    const err = String(r.Error ?? "").trim().toLowerCase();
-    if (sel === "ok")    return err === "ok";
-    if (sel === "error") return err !== "ok";
-    return true;
-  });
+    const sel = filters.status.trim().toLowerCase()
+    deduped = deduped.filter((r) => {
+      const err = String(r.Error ?? '')
+        .trim()
+        .toLowerCase()
+      if (sel === 'ok') return err === 'ok'
+      if (sel === 'error') return err !== 'ok'
+      return true
+    })
   }
 
   // 5️⃣  Sort DESC — latest on top (for display)
-  deduped.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  deduped.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
 
-  const total = deduped.length;
+  const total = deduped.length
 
   // 6️⃣  Summary stats (computed once, on full filtered set)
-  const uniqueProducts  = new Set(deduped.map((r) => r.Product).filter(Boolean)).size;
-  const barcodeOkCount  = deduped.filter((r) => String(r.Error ?? "").trim().toLowerCase() === "ok").length;
-  const barcodeNgCount  = total - barcodeOkCount;
+  const uniqueProducts = new Set(deduped.map((r) => r.Product).filter(Boolean)).size
+  const barcodeOkCount = deduped.filter(
+    (r) =>
+      String(r.Error ?? '')
+        .trim()
+        .toLowerCase() === 'ok',
+  ).length
+  const barcodeNgCount = total - barcodeOkCount
 
   // Total production: max ProductionCount per Plant+Model combination, then sum
-  const plantModelMax = new Map();
+  const plantModelMax = new Map()
   for (const row of deduped) {
-    const key = `${row.Plant}__${row.Model}`;
-    const cur = plantModelMax.get(key)?.ProductionCount ?? -1;
-    if ((row.ProductionCount ?? 0) > cur) plantModelMax.set(key, row);
+    const key = `${row.Plant}__${row.Model}`
+    const cur = plantModelMax.get(key)?.ProductionCount ?? -1
+    if ((row.ProductionCount ?? 0) > cur) plantModelMax.set(key, row)
   }
-  let totalProduction = 0;
-  plantModelMax.forEach((r) => { totalProduction += r.ProductionCount || 0; });
+  let totalProduction = 0
+  plantModelMax.forEach((r) => {
+    totalProduction += r.ProductionCount || 0
+  })
 
   // Per-product summary for the summary modal
-  const productSummaryMap = new Map();
+  const productSummaryMap = new Map()
   for (const row of deduped) {
-    const product = row.Product;
-    if (!product) continue;
+    const product = row.Product
+    if (!product) continue
 
-    const rowTime = new Date(row.timestamp);
+    const rowTime = new Date(row.timestamp)
     if (!productSummaryMap.has(product)) {
-      productSummaryMap.set(product, { latestRow: row, latestTime: rowTime, barcodeOk: 0, barcodeNg: 0 });
+      productSummaryMap.set(product, {
+        latestRow: row,
+        latestTime: rowTime,
+        barcodeOk: 0,
+        barcodeNg: 0,
+      })
     } else {
-      const e = productSummaryMap.get(product);
-      if (rowTime > e.latestTime) { e.latestRow = row; e.latestTime = rowTime; }
+      const e = productSummaryMap.get(product)
+      if (rowTime > e.latestTime) {
+        e.latestRow = row
+        e.latestTime = rowTime
+      }
     }
 
-    const err = String(row.Error ?? "").trim().toLowerCase();
-    const entry = productSummaryMap.get(product);
-    if (err === "ok") entry.barcodeOk += 1;
-    else              entry.barcodeNg += 1;
+    const err = String(row.Error ?? '')
+      .trim()
+      .toLowerCase()
+    const entry = productSummaryMap.get(product)
+    if (err === 'ok') entry.barcodeOk += 1
+    else entry.barcodeNg += 1
   }
 
   const productSummaries = Array.from(productSummaryMap.entries()).map(([product, s]) => ({
     product,
     totalProduction: s.latestRow?.ProductionCount || 0,
-    barcodeOk:       s.barcodeOk,
-    barcodeNg:       s.barcodeNg,
-    company:         s.latestRow?.Company || "-",
-    plant:           s.latestRow?.Plant   || "-",
-    model:           s.latestRow?.Model   || "-",
-  }));
+    barcodeOk: s.barcodeOk,
+    barcodeNg: s.barcodeNg,
+    company: s.latestRow?.Company || '-',
+    plant: s.latestRow?.Plant || '-',
+    model: s.latestRow?.Model || '-',
+  }))
 
   // 7️⃣  Paginate
-  const page   = Math.max(Number(pagination.page)  || 1,  1);
-  const limit  = Math.min(Number(pagination.limit) || 10, 500);
-  const offset = (page - 1) * limit;
-  const pageData = deduped.slice(offset, offset + limit);
+  const page = Math.max(Number(pagination.page) || 1, 1)
+  const limit = Math.min(Number(pagination.limit) || 10, 500)
+  const offset = (page - 1) * limit
+  const pageData = deduped.slice(offset, offset + limit)
 
   return {
-    data:       pageData,
+    data: pageData,
     total,
     page,
     limit,
@@ -515,28 +556,28 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
       totalProduction,
     },
     productSummaries,
-  };
-};
+  }
+}
 export const getPlcReportOptionsService = async () => {
   const companies = await PlcDataModel.findAll({
     attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('company_name')), 'company_name']],
     raw: true,
-  });
+  })
   const plants = await PlcDataModel.findAll({
     attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('plant_name')), 'plant_name']],
     raw: true,
-  });
+  })
   const models = await PlcDataModel.findAll({
     attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('model')), 'model']],
     raw: true,
-  });
+  })
 
   return {
     companies: companies.map((c) => c.company_name).filter(Boolean),
     plants: plants.map((p) => p.plant_name).filter(Boolean),
     models: models.map((m) => m.model).filter(Boolean),
-  };
-};
+  }
+}
 
 export const getPlcListingService = async (filters = {}) => {
   const where = buildDbWhere(filters, Op)
@@ -728,7 +769,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
       {
         replacements,
         type: Sequelize.QueryTypes.SELECT,
-      }
+      },
     ),
     sequelize.query(
       `WITH LatestStatus AS (
@@ -743,7 +784,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
       {
         replacements,
         type: Sequelize.QueryTypes.SELECT,
-      }
+      },
     ),
     sequelize.query('SELECT DISTINCT device_id FROM plc_data WHERE device_id IS NOT NULL', {
       type: Sequelize.QueryTypes.SELECT,
@@ -944,17 +985,17 @@ export const getPlcDowntimeByMachineService = async (filters = {}) => {
     WHERE prev_stop_time IS NOT NULL
     GROUP BY device_id
     ORDER BY value DESC;
-  `;
+  `
 
   const results = await sequelize.query(downtimeQuery, {
     type: Sequelize.QueryTypes.SELECT,
     raw: true,
-  });
+  })
 
   return results.map((r) => ({
     name: r.name,
     value: r.value,
-  }));
+  }))
 }
 
 export const getPlcTimeDistributionService = async (filters = {}) => {
@@ -1100,10 +1141,10 @@ export const getPlcTimeDistributionService = async (filters = {}) => {
 }
 
 export const getMachinePerformanceService = async (filters = {}) => {
-  const { startDate, endDate, companyName, plantName, deviceId, model } = filters;
+  const { startDate, endDate, companyName, plantName, deviceId, model } = filters
 
   // We use the SQL logic provided by the user, adapted for our schema and including filters.
-  // The logic identifies Best/Worst machines based on Running Time (Running -> Stopped transitions) 
+  // The logic identifies Best/Worst machines based on Running Time (Running -> Stopped transitions)
   // and Production Count.
 
   const performanceQuery = `
@@ -1140,44 +1181,44 @@ export const getMachinePerformanceService = async (filters = {}) => {
       GROUP BY device_id, machine_name 
     ) 
     SELECT * FROM Aggregated;
-  `;
+  `
 
-  const replacements = {};
-  if (startDate) replacements.startDate = startDate;
-  if (endDate) replacements.endDate = endDate;
-  if (companyName) replacements.companyName = companyName;
-  if (plantName) replacements.plantName = plantName;
-  if (deviceId) replacements.deviceId = deviceId;
-  if (model) replacements.model = model;
+  const replacements = {}
+  if (startDate) replacements.startDate = startDate
+  if (endDate) replacements.endDate = endDate
+  if (companyName) replacements.companyName = companyName
+  if (plantName) replacements.plantName = plantName
+  if (deviceId) replacements.deviceId = deviceId
+  if (model) replacements.model = model
 
   const results = await sequelize.query(performanceQuery, {
     replacements,
     type: Sequelize.QueryTypes.SELECT,
     raw: true,
-  });
+  })
 
   if (!results || results.length === 0) {
     return {
       best_machine: null,
       worst_machine: null,
-    };
+    }
   }
 
   // Find Best Machine: MAX(total_running_time) then MAX(total_production)
   const bestMachine = [...results].sort((a, b) => {
     if (b.total_running_time !== a.total_running_time) {
-      return b.total_running_time - a.total_running_time;
+      return b.total_running_time - a.total_running_time
     }
-    return b.total_production - a.total_production;
-  })[0];
+    return b.total_production - a.total_production
+  })[0]
 
   // Find Worst Machine: MIN(total_running_time) then MIN(total_production)
   const worstMachine = [...results].sort((a, b) => {
     if (a.total_running_time !== b.total_running_time) {
-      return a.total_running_time - b.total_running_time;
+      return a.total_running_time - b.total_running_time
     }
-    return a.total_production - b.total_production;
-  })[0];
+    return a.total_production - b.total_production
+  })[0]
 
   return {
     best_machine: {
@@ -1190,39 +1231,40 @@ export const getMachinePerformanceService = async (filters = {}) => {
       total_running_time: worstMachine.total_running_time,
       total_production: worstMachine.total_production,
     },
-  };
-};
+  }
+}
 
 export const getPlcDowntimeByErrorService = async (filters = {}) => {
-  const { startDate, endDate, companyName, plantName, deviceId, model } = filters;
-  
-  let whereClause = "WHERE status = 'Stopped' AND stop_time IS NOT NULL AND JSON_VALUE(extra_data, '$.Error') IS NOT NULL AND JSON_VALUE(extra_data, '$.Error') <> ''";
-  const replacements = {};
+  const { startDate, endDate, companyName, plantName, deviceId, model } = filters
+
+  let whereClause =
+    "WHERE status = 'Stopped' AND stop_time IS NOT NULL AND JSON_VALUE(extra_data, '$.Error') IS NOT NULL AND JSON_VALUE(extra_data, '$.Error') <> ''"
+  const replacements = {}
 
   if (startDate && endDate) {
-    whereClause += " AND start_time BETWEEN :startDate AND :endDate";
-    replacements.startDate = startDate;
-    replacements.endDate = endDate;
+    whereClause += ' AND start_time BETWEEN :startDate AND :endDate'
+    replacements.startDate = startDate
+    replacements.endDate = endDate
   }
 
   if (companyName) {
-    whereClause += " AND company_name LIKE :companyName";
-    replacements.companyName = `%${companyName}%`;
+    whereClause += ' AND company_name LIKE :companyName'
+    replacements.companyName = `%${companyName}%`
   }
 
   if (plantName) {
-    whereClause += " AND plant_name LIKE :plantName";
-    replacements.plantName = `%${plantName}%`;
+    whereClause += ' AND plant_name LIKE :plantName'
+    replacements.plantName = `%${plantName}%`
   }
 
   if (deviceId) {
-    whereClause += " AND device_id LIKE :deviceId";
-    replacements.deviceId = `%${deviceId}%`;
+    whereClause += ' AND device_id LIKE :deviceId'
+    replacements.deviceId = `%${deviceId}%`
   }
 
   if (model) {
-    whereClause += " AND model LIKE :model";
-    replacements.model = `%${model}%`;
+    whereClause += ' AND model LIKE :model'
+    replacements.model = `%${model}%`
   }
 
   const query = `
@@ -1233,55 +1275,55 @@ export const getPlcDowntimeByErrorService = async (filters = {}) => {
     ${whereClause}
     GROUP BY UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.Error')))) 
     ORDER BY total_downtime DESC;
-  `;
+  `
 
   const results = await sequelize.query(query, {
     replacements,
     type: Sequelize.QueryTypes.SELECT,
     raw: true,
-  });
+  })
 
-  return results.map(r => ({
+  return results.map((r) => ({
     error_name: r.error_name,
-    total_downtime: r.total_downtime
-  }));
-};
+    total_downtime: r.total_downtime,
+  }))
+}
 
 export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
-  const { startDate, endDate, companyName, plantName, deviceId, model } = filters;
-  
+  const { startDate, endDate, companyName, plantName, deviceId, model } = filters
+
   let whereClause = `
     WHERE status = 'Stopped' 
       AND stop_time IS NOT NULL 
       AND JSON_VALUE(extra_data, '$.ERROR_STATUS') IS NOT NULL 
       AND LOWER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) <> 'ok'
-  `;
-  const replacements = {};
+  `
+  const replacements = {}
 
   if (startDate && endDate) {
-    whereClause += " AND start_time BETWEEN :startDate AND :endDate";
-    replacements.startDate = startDate;
-    replacements.endDate = endDate;
+    whereClause += ' AND start_time BETWEEN :startDate AND :endDate'
+    replacements.startDate = startDate
+    replacements.endDate = endDate
   }
 
   if (companyName) {
-    whereClause += " AND company_name LIKE :companyName";
-    replacements.companyName = `%${companyName}%`;
+    whereClause += ' AND company_name LIKE :companyName'
+    replacements.companyName = `%${companyName}%`
   }
 
   if (plantName) {
-    whereClause += " AND plant_name LIKE :plantName";
-    replacements.plantName = `%${plantName}%`;
+    whereClause += ' AND plant_name LIKE :plantName'
+    replacements.plantName = `%${plantName}%`
   }
 
   if (deviceId) {
-    whereClause += " AND device_id LIKE :deviceId";
-    replacements.deviceId = `%${deviceId}%`;
+    whereClause += ' AND device_id LIKE :deviceId'
+    replacements.deviceId = `%${deviceId}%`
   }
 
   if (model) {
-    whereClause += " AND model LIKE :model";
-    replacements.model = `%${model}%`;
+    whereClause += ' AND model LIKE :model'
+    replacements.model = `%${model}%`
   }
 
   const query = `
@@ -1292,16 +1334,16 @@ export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
     ${whereClause}
     GROUP BY UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) 
     ORDER BY total_downtime DESC;
-  `;
+  `
 
   const results = await sequelize.query(query, {
     replacements,
     type: Sequelize.QueryTypes.SELECT,
     raw: true,
-  });
+  })
 
-  return results.map(r => ({
+  return results.map((r) => ({
     error_status: r.error_status,
-    total_downtime: r.total_downtime
-  }));
-};
+    total_downtime: r.total_downtime,
+  }))
+}
