@@ -8,10 +8,12 @@ import { Op, Sequelize } from "sequelize";
 export const getAllPlcDashboardService = async (filters = {}) => {
   const where = {};
   
-  if (filters.device_id)    where.device_id    = filters.device_id; // Exact match for faster filtering
+  if (filters.device_id)    where.device_id    = filters.device_id;
   if (filters.company_name) where.company_name = filters.company_name;
   if (filters.plant_name)   where.plant_name   = filters.plant_name;
-  if (filters.status)       where.status       = filters.status;
+  if (filters.status && filters.status !== 'All') {
+    where.status = filters.status.toLowerCase();
+  }
 
   const rows = await PlcDashboardModel.findAll({
     where,

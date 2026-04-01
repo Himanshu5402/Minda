@@ -6,13 +6,13 @@ import { sequelize } from "../sequelize.js";
  * Fetch machine history with pagination and filters
  */
 export const getMachineHistoryService = async (filters = {}, pagination = {}) => {
-  const { device_id, status, part_no, duration } = filters;
+  const { device_id, status, model, duration } = filters;
   const { page = 1, limit = 10 } = pagination;
   const offset = (page - 1) * limit;
 
   const where = { device_id };
   if (status) where.status = status.toLowerCase();
-  if (part_no) where.part_no = { [Op.like]: `%${part_no}%` };
+  if (model) where.model = { [Op.like]: `%${model}%` };
 
   // Duration filter logic
   if (duration === "today") {
@@ -43,11 +43,11 @@ export const getMachineHistoryService = async (filters = {}, pagination = {}) =>
  * Fetch machine summary (Total Products, Production, Downtime)
  */
 export const getMachineSummaryService = async (filters = {}) => {
-  const { device_id, status, part_no, duration, startDate, endDate } = filters;
+  const { device_id, status, model, duration, startDate, endDate } = filters;
   
   const where = { device_id };
   if (status) where.status = status.toLowerCase();
-  if (part_no) where.part_no = { [Op.like]: `%${part_no}%` };
+  if (model) where.model = { [Op.like]: `%${model}%` };
 
   // Duration filter logic
   if (duration === "today") {
@@ -58,20 +58,22 @@ export const getMachineSummaryService = async (filters = {}) => {
     where.timestamp = { [Op.between]: [new Date(startDate), new Date(endDate)] };
   }
 
-  // Calculate total downtime using gap-based logic from machine_history table
+  // Calculate total downtime using the same gap-based logic as Machine Stoppage Summary
+  // We use machine_history table to support Part No and other filters
   const downtimeQuery = `
     WITH UniqueSessions AS (
-      SELECT device_id, part_no, start_time, stop_time,
+      SELECT device_id, model, start_time, stop_time,
              ROW_NUMBER() OVER (
                PARTITION BY device_id, start_time, stop_time
                ORDER BY start_time ASC
              ) AS rn
       FROM machine_history
       WHERE device_id = :device_id
-      ${part_no ? "AND part_no LIKE :part_no" : ""}
-      ${status ? "AND status = :status" : ""}
-      ${duration === "today" ? "AND timestamp >= :today" : ""}
-      ${duration === "custom" && startDate && endDate ? "AND timestamp BETWEEN :startDate AND :endDate" : ""}
+        AND stop_time IS NOT NULL
+        ${model ? "AND model LIKE :model" : ""}
+        ${status ? "AND status = :status" : ""}
+        ${duration === "today" ? "AND timestamp >= :today" : ""}
+        ${duration === "custom" && startDate && endDate ? "AND timestamp BETWEEN :startDate AND :endDate" : ""}
     ),
     FilteredData AS (
       SELECT *
@@ -82,7 +84,7 @@ export const getMachineSummaryService = async (filters = {}) => {
       SELECT *,
              LAG(stop_time) OVER (
                PARTITION BY device_id
-               ORDER BY start_time
+               ORDER BY start_time ASC
              ) AS prev_stop_time
       FROM FilteredData
     ),
@@ -101,7 +103,7 @@ export const getMachineSummaryService = async (filters = {}) => {
   `;
 
   const replacements = { device_id };
-  if (part_no) replacements.part_no = `%${part_no}%`;
+  if (model) replacements.model = `%${model}%`;
   if (status) replacements.status = status.toLowerCase();
   if (duration === "today") {
     const today = new Date();
@@ -120,21 +122,21 @@ export const getMachineSummaryService = async (filters = {}) => {
 
   const total_downtime_seconds = downtimeResult?.totalDowntime || 0;
 
-  // Calculate total unique products by counting distinct part_no with filters
+  // Calculate total unique products by counting distinct models
   const total_products = await MachineHistoryModel.count({
     where,
     distinct: true,
-    col: 'part_no'
+    col: 'model'
   });
 
-  // For total production, we want the sum of MAX(production_count) for each (part_no, start_time) pair
+  // For total production, we want the sum of MAX(production_count) for each (model, start_time) pair
   // Apply same filters to production results
   const productionResults = await MachineHistoryModel.findAll({
     where,
     attributes: [
       [Sequelize.fn('MAX', Sequelize.col('production_count')), 'max_prod']
     ],
-    group: ['part_no', 'start_time'],
+    group: ['model', 'start_time'],
     raw: true
   });
 

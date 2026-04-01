@@ -7,14 +7,14 @@ import {
 } from "../services/machineHistory.service.js";
 
 export const getMachineHistory = AsyncHandler(async (req, res) => {
-  const { device_id, page = 1, limit = 10, status, part_no, duration, startDate, endDate } = req.query;
-  
+  const { device_id, status, model, duration, startDate, endDate, page, limit } = req.query;
+
   if (!device_id) {
     return res.status(StatusCodes.BAD_REQUEST).json({ message: "device_id is required" });
   }
 
   const result = await getMachineHistoryService(
-    { device_id, status, part_no, duration, startDate, endDate },
+    { device_id, status, model, duration, startDate, endDate },
     { page, limit }
   );
 
@@ -25,13 +25,13 @@ export const getMachineHistory = AsyncHandler(async (req, res) => {
 });
 
 export const getMachineSummary = AsyncHandler(async (req, res) => {
-  const { device_id, status, part_no, duration, startDate, endDate } = req.query;
+  const { device_id, status, model, duration, startDate, endDate } = req.query;
   
   if (!device_id) {
     return res.status(StatusCodes.BAD_REQUEST).json({ message: "device_id is required" });
   }
 
-  const result = await getMachineSummaryService({ device_id, status, part_no, duration, startDate, endDate });
+  const result = await getMachineSummaryService({ device_id, status, model, duration, startDate, endDate });
 
   res.status(StatusCodes.OK).json({
     message: "Machine summary fetched successfully",
