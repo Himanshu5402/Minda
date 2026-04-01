@@ -25,13 +25,13 @@ export const getMachineHistory = AsyncHandler(async (req, res) => {
 });
 
 export const getMachineSummary = AsyncHandler(async (req, res) => {
-  const { device_id } = req.query;
+  const { device_id, status, part_no, duration, startDate, endDate } = req.query;
   
   if (!device_id) {
     return res.status(StatusCodes.BAD_REQUEST).json({ message: "device_id is required" });
   }
 
-  const result = await getMachineSummaryService(device_id);
+  const result = await getMachineSummaryService({ device_id, status, part_no, duration, startDate, endDate });
 
   res.status(StatusCodes.OK).json({
     message: "Machine summary fetched successfully",

@@ -1,5 +1,6 @@
 import { PlcDataModel } from '../models/plcData.model.js'
 import { PlcProductModel } from '../models/plcProduct.model.js'
+import { MachineHistoryModel } from '../models/machineHistory.model.js'
 import { NotFoundError } from '../utils/errorHandler.js'
 import { Op, Sequelize } from 'sequelize'
 import { sequelize } from '../sequelize.js'
@@ -571,11 +572,16 @@ export const getPlcReportOptionsService = async () => {
     attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('model')), 'model']],
     raw: true,
   })
+  const part_nos = await MachineHistoryModel.findAll({
+    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('part_no')), 'part_no']],
+    raw: true,
+  })
 
   return {
     companies: companies.map((c) => c.company_name).filter(Boolean),
     plants: plants.map((p) => p.plant_name).filter(Boolean),
     models: models.map((m) => m.model).filter(Boolean),
+    part_nos: part_nos.map((p) => p.part_no).filter(Boolean),
   }
 }
 
