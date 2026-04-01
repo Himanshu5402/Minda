@@ -596,66 +596,96 @@ export const getPlcListingService = async (filters = {}) => {
 
   const data = await PlcDataModel.findAll({
     where,
-    order: [['created_at', 'DESC']],
+    order: [['timestamp', 'DESC'], ['created_at', 'DESC']],
   })
 
   await attachProductToPlcData(data)
 
-  // ─── Helper: build the composite key for (device_id, model, part_no) ────────
-  const compositeKey = (item) => {
-    const deviceId  = item.device_id                        || 'Unknown'
-    const model     = item.product?.model     ?? item.machine?.model ?? 'Unknown'
-    const partNo    = item.product?.part_no                 || 'Unknown'
-    return `${deviceId}||${model}||${partNo}`
-  }
-
-  // ─── Latest record per (device_id, model, part_no) ──────────────────────────
-  const deviceMap = new Map()
-
-  data.forEach((item) => {
-    const key      = compositeKey(item)
-    const existing = deviceMap.get(key)
-
-    if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
-      deviceMap.set(key, item)
-    }
-  })
-
-  let result = Array.from(deviceMap.values())
-
-  // ─── Backfill production_count for stopped machines ─────────────────────────
-  // data is already sorted DESC by created_at, so the first match is the
-  // most-recent "running" record for that (device_id, model, part_no) group.
-  result = result.map((item) => {
-    const isStopped  = (item.status || '').toLowerCase() === 'stopped'
-    const hasNoCount = item.production_count == null || item.production_count === 0
-
-    if (isStopped && hasNoCount) {
-      const itemKey = compositeKey(item)
-
-      const lastRunningRecord = data.find(
-        (r) =>
-          compositeKey(r) === itemKey &&
-          (r.status || '').toLowerCase() === 'running' &&
-          r.production_count != null &&
-          r.production_count > 0
-      )
-
-      if (lastRunningRecord) {
-        return {
-          ...item.toJSON(),
-          production_count: lastRunningRecord.production_count,
-        }
+  const toPlain = (row) => (row?.toJSON ? row.toJSON() : row)
+  const asObject = (value) => {
+    if (!value) return null
+    if (typeof value === 'object') return value
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        return parsed && typeof parsed === 'object' ? parsed : null
+      } catch (_) {
+        return null
       }
     }
+    return null
+  }
+  const getModel = (row) => {
+    const machine = asObject(row?.machine)
+    const product = asObject(row?.product)
+    return row?.model ?? machine?.model ?? product?.model ?? 'Unknown'
+  }
+  const norm = (value) => String(value ?? 'Unknown').trim().toLowerCase()
+  const getDeviceId = (row) => row?.device_id || 'Unknown'
+  const compositeKey = (row) => `${norm(getDeviceId(row))}||${norm(getModel(row))}`
+  const toTs = (row) => {
+    const dt = new Date(row?.created_at)
+    const ts = dt.getTime()
+    return Number.isFinite(ts) ? ts : 0
+  }
+  const toCount = (value) => {
+    const num = Number(value)
+    return Number.isFinite(num) ? num : 0
+  }
 
-    return item
-  })
+  // Pass 1:
+  // - strict latest row per (device_id, model),
+  // - strict latest row per device_id (for final API row).
+  const latestRowByComposite = new Map()
+  const latestRowByDevice = new Map()
+  const latestCountByComposite = new Map()
 
-  // ─── Optional status filter ──────────────────────────────────────────────────
-  if (filters.status && filters.status !== 'all') {
-    const sel = filters.status.trim().toLowerCase()
-    result = result.filter((r) => (r.status || '').trim().toLowerCase() === sel)
+  for (const row of data) {
+    const deviceId = norm(getDeviceId(row))
+    const key = compositeKey(row)
+    const rowTs = toTs(row)
+
+    const existingCombo = latestRowByComposite.get(key)
+    if (!existingCombo || rowTs > existingCombo.ts) {
+      latestRowByComposite.set(key, { row, ts: rowTs })
+    }
+
+    const existingDevice = latestRowByDevice.get(deviceId)
+    if (!existingDevice || rowTs > existingDevice.ts) {
+      latestRowByDevice.set(deviceId, { row: toPlain(row), ts: rowTs })
+    }
+  }
+
+  // Pass 2: exactly one production_count per (device_id, model),
+  // using only the latest RUNNING record for that model.
+  for (const [key, { row: latestRow }] of latestRowByComposite.entries()) {
+    const lastRunningRecord = data.find((r) => {
+      if (compositeKey(r) !== key) return false
+      if (String(r?.status || '').toLowerCase() !== 'running') return false
+      return toCount(r?.production_count) >= 0
+    })
+
+    // If no running record exists for this model, do not include it in total.
+    if (!lastRunningRecord) continue
+
+    latestCountByComposite.set(key, toCount(lastRunningRecord.production_count))
+  }
+
+  // Sum latest per-model counts into device-level production_count.
+  const deviceTotalMap = new Map()
+  for (const [key, count] of latestCountByComposite.entries()) {
+    const deviceId = key.split('||')[0]
+    deviceTotalMap.set(deviceId, (deviceTotalMap.get(deviceId) || 0) + toCount(count))
+  }
+
+  let result = Array.from(latestRowByDevice.values()).map(({ row }) => ({
+    ...row,
+    production_count: deviceTotalMap.get(norm(row.device_id || 'Unknown')) || 0,
+  }))
+
+  if (filters.status) {
+    const sel = filters.status.toLowerCase()
+    result = result.filter((r) => String(r?.status || '').toLowerCase() === sel)
   }
 
   return result
