@@ -762,13 +762,13 @@ export const getPlcErrorDistributionService = async (filters = {}) => {
   }
 
   if (filters.companyName) {
-    where.companyname = {
+    where.company_name = {
       [Op.like]: `%${filters.companyName}%`,
     }
   }
 
   if (filters.plantName) {
-    where.plantname = {
+    where.plant_name = {
       [Op.like]: `%${filters.plantName}%`,
     }
   }
@@ -830,8 +830,8 @@ export const getPlcDowntimeByMachineService = async (filters = {}) => {
     }
   }
 
-  if (filters.companyName) where.companyname = { [Op.like]: `%${filters.companyName}%` }
-  if (filters.plantName) where.plantname = { [Op.like]: `%${filters.plantName}%` }
+  if (filters.companyName) where.company_name = { [Op.like]: `%${filters.companyName}%` }
+  if (filters.plantName) where.plant_name = { [Op.like]: `%${filters.plantName}%` }
   if (filters.deviceId) where.device_id = { [Op.like]: `%${filters.deviceId}%` }
   if (filters.model) where.model = { [Op.like]: `%${filters.model}%` }
 

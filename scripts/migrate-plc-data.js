@@ -54,44 +54,44 @@ async function migratePlcData() {
       table.create = false // Table already exists
 
       // Add columns (Ensure names match DB schema exactly)
-      table.columns.add('_id', sql.UniqueIdentifier, { nullable: false, primary: true })
-      table.columns.add('company_name', sql.VarChar(255), { nullable: true })
-      table.columns.add('plant_name', sql.VarChar(255), { nullable: true })
-      table.columns.add('line_number', sql.VarChar(50), { nullable: true })
-      table.columns.add('device_id', sql.VarChar(255), { nullable: true })
-      table.columns.add('timestamp', sql.DateTime, { nullable: true })
-      table.columns.add('start_time', sql.DateTime, { nullable: true })
-      table.columns.add('stop_time', sql.DateTime, { nullable: true })
-      table.columns.add('status', sql.VarChar(255), { nullable: true })
-      table.columns.add('latch_force', sql.Int, { nullable: true })
-      table.columns.add('claw_force', sql.Int, { nullable: true })
-      table.columns.add('safety_lever', sql.Int, { nullable: true })
-      table.columns.add('claw_lever', sql.Int, { nullable: true })
-      table.columns.add('stroke', sql.Int, { nullable: true })
-      table.columns.add('production_count', sql.Int, { nullable: true })
-      table.columns.add('model', sql.VarChar(255), { nullable: true })
-      table.columns.add('alarm', sql.VarChar(255), { nullable: true })
-      table.columns.add('extra_data', sql.NVarChar(sql.MAX), { nullable: true })
-      table.columns.add('created_at', sql.DateTime, { nullable: false })
-      table.columns.add('updated_at', sql.DateTime, { nullable: false })
+      table.columns.add("_id", sql.UniqueIdentifier, { nullable: false, primary: true });
+      table.columns.add("company_name", sql.VarChar(255), { nullable: true });
+      table.columns.add("plant_name", sql.VarChar(255), { nullable: true });
+      table.columns.add("line_number", sql.VarChar(50), { nullable: true });
+      table.columns.add("device_id", sql.VarChar(255), { nullable: true });
+      table.columns.add("timestamp", sql.DateTime, { nullable: true });
+      table.columns.add("start_time", sql.DateTime, { nullable: true });
+      table.columns.add("stop_time", sql.DateTime, { nullable: true });
+      table.columns.add("status", sql.VarChar(255), { nullable: true });
+      table.columns.add("latch_force", sql.Int, { nullable: true });
+      table.columns.add("claw_force", sql.Int, { nullable: true });
+      table.columns.add("safety_lever", sql.Int, { nullable: true });
+      table.columns.add("claw_lever", sql.Int, { nullable: true });
+      table.columns.add("stroke", sql.Int, { nullable: true });
+      table.columns.add("production_count", sql.Int, { nullable: true });
+      table.columns.add("model", sql.VarChar(255), { nullable: true });
+      table.columns.add("alarm", sql.VarChar(255), { nullable: true });
+      table.columns.add("extra_data", sql.NVarChar(sql.MAX), { nullable: true });
+      table.columns.add("created_at", sql.DateTime, { nullable: false });
+      table.columns.add("updated_at", sql.DateTime, { nullable: false });
 
       // Add rows to the table object
-      batch.forEach((row) => {
-        const now = new Date()
-
+      batch.forEach(row => {
+        const now = new Date();
+        
         // Extract nested objects from the new payload structure
-        const params = row.parameters || {}
-        const product = row.product || {}
-        const barcode = row.Barcode_details || {}
-        const machine = row.machine || {}
+        const params = row.parameters || {};
+        const product = row.product || {};
+        const barcode = row.Barcode_details || {};
+        const machine = row.machine || {};
 
         // Prepare extra_data object
         // We want to store the original parameters, product, and barcode info
         const extraData = {
           ...params,
           product: product,
-          Barcode_details: barcode,
-        }
+          Barcode_details: barcode
+        };
 
         table.rows.add(
           row._id || sql.VarChar(36).createValue(undefined), // Let DB generate UUID if missing

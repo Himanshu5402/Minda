@@ -22,7 +22,8 @@ import {
 const router = Router();
 
 router.post("/", createPlcData);
-router.get("/machine-stoppage", getMachineStoppage);
+router.get("/stoppage", getMachineStoppage);
+router.get("/machine-stoppage", getMachineStoppage); // Keep for backward compatibility if needed
 router.get("/download-pdf", downloadMachineStoppagePdf);
 router.get("/analytics/error-distribution", getPlcErrorDistribution);
 router.get("/analytics/downtime-by-machine", getPlcDowntimeByMachine);
