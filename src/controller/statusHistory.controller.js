@@ -19,12 +19,27 @@ import { sendNewNotification } from '../socket/notification.socket.js'
 import { logger } from '../utils/logger.js'
 import { WorkflowApprovalModel } from '../models/workflowApproval.model.js'
 import { TemplateSubmissionModel } from '../models/templateSubmission.model.js'
+import { io } from '../server.js'
 
 export const createStatusHistory = AsyncHandler(async (req, res) => {
   const data = req.body
   const user = req.currentUser
   const result = await CreateStatusHistoryService({ ...data, approved_by: user._id })
   const check = await getStatusHistoryById(result._id)
+
+  if (io) {
+    console.log('[socket] emitting dataCreated for statusHistory')
+    io.emit('dataCreated', {
+      entity: 'statusHistory',
+      data: result,
+    })
+    console.log('[socket] emitting dataUpdated for statusHistory')
+    io.emit('dataUpdated', {
+      entity: 'statusHistory',
+      data: check,
+    })
+  }
+
   res.status(StatusCodes.CREATED).json({
     data: result,
     message: 'Template Status Initiated',

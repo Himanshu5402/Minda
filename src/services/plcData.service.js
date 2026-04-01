@@ -171,7 +171,10 @@ export const createPlcDataService = async (data) => {
   // Compare using JSON.stringify
   if (lastRecord && stringifySorted(cleanCurrent) === stringifySorted(cleanLast)) {
     console.log('⚠️ No change detected → skipping insert')
-    return lastRecord.toJSON()
+    return {
+      data: lastRecord.toJSON(),
+      isNewRecord: false,
+    }
   }
 
   // Insert new row
@@ -184,7 +187,10 @@ export const createPlcDataService = async (data) => {
     await attachProductToPlcData(plcData)
   }
 
-  return plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true })
+  return {
+    data: plcData.toJSON ? plcData.toJSON() : plcData.get({ plain: true }),
+    isNewRecord: true,
+  }
 }
 // export const createPlcDataService = async (data) => {
 //   const flat = flattenPayload(data);
@@ -921,10 +927,23 @@ export const updatePlcDataService = async (id, data) => {
     updateData.extra_data = { ...(plcData.extra_data || {}), ...extra }
   }
 
-  await plcData.update(updateData)
+  plcData.set(updateData)
+  const changedFields = plcData.changed()
+  if (!changedFields || changedFields.length === 0) {
+    await attachProductToPlcData(plcData)
+    return {
+      data: plcData,
+      isUpdated: false,
+    }
+  }
+
+  await plcData.save()
   await attachProductToPlcData(plcData)
 
-  return plcData
+  return {
+    data: plcData,
+    isUpdated: true,
+  }
 }
 
 export const deletePlcDataService = async (id) => {

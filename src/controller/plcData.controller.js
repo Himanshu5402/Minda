@@ -19,12 +19,22 @@ import {
   getPlcListingService,
   getPlcReportOptionsService,
 } from '../services/plcData.service.js'
+import { io } from '../server.js'
 
 export const createPlcData = AsyncHandler(async (req, res) => {
-  const result = await createPlcDataService(req.body)
+  const { data, isNewRecord } = await createPlcDataService(req.body)
+
+  if (isNewRecord && io) {
+    console.log('[socket] emitting dataCreated for plcData')
+    io.emit('dataCreated', {
+      entity: 'plcData',
+      data,
+    })
+  }
+
   res.status(StatusCodes.CREATED).json({
     message: 'PLC Data created successfully',
-    data: result,
+    data,
   })
 })
 
@@ -599,15 +609,33 @@ export const getPlcListing = async (req, res, next) => {
   }
 }
 export const updatePlcData = AsyncHandler(async (req, res) => {
-  const result = await updatePlcDataService(req.params.id, req.body)
+  const { data, isUpdated } = await updatePlcDataService(req.params.id, req.body)
+
+  if (isUpdated && io) {
+    console.log(`[socket] emitting dataUpdated for plcData id=${req.params.id}`)
+    io.emit('dataUpdated', {
+      entity: 'plcData',
+      id: req.params.id,
+      data,
+    })
+  }
+
   res.status(StatusCodes.OK).json({
     message: 'PLC Data updated successfully',
-    data: result,
+    data,
   })
 })
 
 export const deletePlcData = AsyncHandler(async (req, res) => {
   await deletePlcDataService(req.params.id)
+  if (io) {
+    console.log(`[socket] emitting dataUpdated(delete) for plcData id=${req.params.id}`)
+    io.emit('dataUpdated', {
+      entity: 'plcData',
+      id: req.params.id,
+      action: 'deleted',
+    })
+  }
   res.status(StatusCodes.OK).json({
     message: 'PLC Data deleted successfully',
   })
