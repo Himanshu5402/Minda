@@ -702,35 +702,23 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
       replacements,
       type: Sequelize.QueryTypes.SELECT,
     }),
-    sequelize.query('SELECT COUNT(DISTINCT device_id) as count FROM plc_data', {
-      type: Sequelize.QueryTypes.SELECT,
-    }),
     sequelize.query(
-      `WITH UniqueData AS (
-         SELECT device_id, start_time, stop_time,
-                ROW_NUMBER() OVER (
-                  PARTITION BY device_id, start_time, stop_time
-                  ORDER BY start_time DESC
-                ) AS rn
+      `SELECT COUNT(DISTINCT device_id) as count FROM plc_data ${filters.machine_name ? 'WHERE (device_id LIKE :machine_name OR model LIKE :machine_name)' : ''}`,
+      {
+        replacements,
+        type: Sequelize.QueryTypes.SELECT,
+      }
+    ),
+    sequelize.query(
+      `WITH LatestStatus AS (
+         SELECT device_id, status,
+                ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY created_at DESC) as rn
          FROM plc_data
-         ${whereClause}
-       ),
-       FilteredData AS (
-         SELECT *
-         FROM UniqueData
-         WHERE rn = 1
-       ),
-       GapCalculated AS (
-         SELECT device_id,
-                LAG(stop_time) OVER (
-                  PARTITION BY device_id
-                  ORDER BY start_time
-                ) AS prev_stop_time
-         FROM FilteredData
+         ${filters.machine_name ? 'WHERE (device_id LIKE :machine_name OR model LIKE :machine_name)' : ''}
        )
-       SELECT COUNT(DISTINCT device_id) as count
-       FROM GapCalculated
-       WHERE prev_stop_time IS NOT NULL;`,
+       SELECT COUNT(*) as count
+       FROM LatestStatus
+       WHERE rn = 1 AND status = 'Stopped';`,
       {
         replacements,
         type: Sequelize.QueryTypes.SELECT,
