@@ -35,6 +35,7 @@ router.get("/machine-performance", getMachinePerformance);
 router.get("/report/download-pdf",   downloadPlcReportPdf);
 router.get("/report/download-excel", downloadPlcReportExcel);
 router.get("/report/options", getPlcReportOptions);
+router.get("/report", getPlcReport);
 router.get("/", getAllPlcData);
 router.get("/listing", getPlcListing);
 router.get("/:id", getPlcDataById);

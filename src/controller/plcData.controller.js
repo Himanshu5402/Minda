@@ -251,7 +251,6 @@ export const downloadPlcReportPdf = AsyncHandler(async (req, res) => {
         .fillColor('#2e4c99')
         .text('Barcode Production Report', 0, 22, { align: 'center' })
 
-      // Summary line
       doc
         .font('Helvetica')
         .fontSize(8)
@@ -264,61 +263,62 @@ export const downloadPlcReportPdf = AsyncHandler(async (req, res) => {
         )
     }
 
-    doc.addPage()
-    drawPageLayout()
-    doc.on('pageAdded', drawPageLayout)
+    // Map and sanitize all rows
+    const mappedRows = rows.map((row) => ({
+      company: String(row.Company ?? '—'),
+      plant: String(row.Plant ?? '—'),
+      product: String(row.Product ?? '—'),
+      prod_count: String(row.CalculatedProduction === 0 ? '0 (Err)' : '1'),
+      model: String(row.Model ?? '—'),
+      shift: String(row.Shift ?? '—'),
+      operator: String(row.Operator ?? '—'),
+      date: row.Date ? new Date(row.Date).toLocaleString('en-GB') : '—',
+      line_no: String(row.LineNumber ?? '—'),
+      line_name: String(row.LineName ?? '—'),
+      // Sanitize barcode tag by adding spaces around pipes to help with wrapping
+      barcode_tag: String(row.BarcodeTag ?? '—').replace(/\|/g, ' | '),
+      barcode_status: String(row.BarcodeStatus ?? '—'),
+      barcode_dt: row.BarcodeDateTime
+        ? new Date(row.BarcodeDateTime).toLocaleString('en-GB')
+        : '—',
+      error: String(row.Error ?? '—'),
+    }))
 
-    doc.y = 65
+    const headers = [
+      { label: 'Company', property: 'company', width: 60 },
+      { label: 'Plant', property: 'plant', width: 30 },
+      { label: 'Product', property: 'product', width: 60 },
+      { label: 'Prod. Count', property: 'prod_count', width: 40 },
+      { label: 'Model', property: 'model', width: 80 },
+      { label: 'Shift', property: 'shift', width: 25 },
+      { label: 'Operator', property: 'operator', width: 40 },
+      { label: 'Date', property: 'date', width: 80 },
+      { label: 'Line No', property: 'line_no', width: 35 },
+      { label: 'Line Name', property: 'line_name', width: 60 },
+      { label: 'Barcode Tag', property: 'barcode_tag', width: 100 },
+      { label: 'Barcode Status', property: 'barcode_status', width: 50 },
+      { label: 'Barcode DT', property: 'barcode_dt', width: 80 },
+      { label: 'Error', property: 'error', width: 30 },
+    ]
 
-    // Chunk rows into pages of 500 to avoid memory issues
-    const chunkSize = 500
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize).map((row) => ({
-        company: String(row.Company ?? '—'),
-        plant: String(row.Plant ?? '—'),
-        product: String(row.Product ?? '—'),
-        prod_count: String(row.CalculatedProduction === 0 ? '0 (Err)' : '1'),
-        model: String(row.Model ?? '—'),
-        shift: String(row.Shift ?? '—'),
-        operator: String(row.Operator ?? '—'),
-        date: row.Date ? new Date(row.Date).toLocaleString('en-GB') : '—',
-        line_no: String(row.LineNumber ?? '—'),
-        line_name: String(row.LineName ?? '—'),
-        barcode_tag: String(row.BarcodeTag ?? '—'),
-        barcode_status: String(row.BarcodeStatus ?? '—'),
-        barcode_dt: row.BarcodeDateTime
-          ? new Date(row.BarcodeDateTime).toLocaleString('en-GB')
-          : '—',
-        error: String(row.Error ?? '—'),
-      }))
+    // Use manual chunking to avoid pdfkit-table's pagination issues causing blank pages
+    const rowsPerPage = 15
+    for (let i = 0; i < mappedRows.length; i += rowsPerPage) {
+      const chunk = mappedRows.slice(i, i + rowsPerPage)
+      doc.addPage()
+      drawPageLayout()
 
       await doc.table(
         {
-          headers: [
-            { label: 'Company', property: 'company', width: 75 },
-            { label: 'Plant', property: 'plant', width: 35 },
-            { label: 'Product', property: 'product', width: 75 },
-            { label: 'Prod. Count', property: 'prod_count', width: 55 },
-            { label: 'Model', property: 'model', width: 95 },
-            { label: 'Shift', property: 'shift', width: 30 },
-            { label: 'Operator', property: 'operator', width: 50 },
-            { label: 'Date', property: 'date', width: 95 },
-            { label: 'Line No', property: 'line_no', width: 38 },
-            { label: 'Line Name', property: 'line_name', width: 65 },
-            { label: 'Barcode Tag', property: 'barcode_tag', width: 50 },
-            { label: 'Barcode Status', property: 'barcode_status', width: 55 },
-            { label: 'Barcode DT', property: 'barcode_dt', width: 95 },
-            { label: 'Error', property: 'error', width: 35 },
-          ],
+          headers,
           datas: chunk,
         },
         {
-          prepareHeader: () => doc.font('Helvetica-Bold').fontSize(7).fillColor('blue'),
-          prepareRow: () => doc.font('Helvetica').fontSize(7).fillColor('black'),
-          startY: doc.y,
+          prepareHeader: () => doc.font('Helvetica-Bold').fontSize(6.5).fillColor('blue'),
+          prepareRow: () => doc.font('Helvetica').fontSize(6.5).fillColor('black'),
+          startY: 65,
           columnSpacing: 3,
           padding: 4,
-          headerColor: '#000000', // blue header
           striped: true,
           stripedColors: ['#ffffff', '#f0f4ff'],
         },
