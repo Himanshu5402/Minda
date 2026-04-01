@@ -140,25 +140,13 @@ export const downloadMachineStoppagePdf = AsyncHandler(async (req, res) => {
   }
 })
 export const getMachineStoppage = AsyncHandler(async (req, res) => {
-  const { machine_name, from_date, to_date, page, limit } = req.query
+  const { machine_name, from_date, to_date, page = 1, limit = 10 } = req.query;
+  const filters = { machine_name, from_date, to_date };
+  const pagination = { page, limit };
 
-  const filters = {}
-  if (machine_name) filters.machine_name = machine_name
-  if (from_date) filters.from_date = from_date
-  if (to_date) filters.to_date = to_date
-
-  const pagination = {
-    page: parseInt(page) || 1,
-    limit: parseInt(limit) || 10,
-  }
-
-  const result = await getMachineStoppageService(filters, pagination)
-
-  res.status(StatusCodes.OK).json({
-    message: 'Machine stoppage data fetched successfully',
-    ...result,
-  })
-})
+  const result = await getMachineStoppageService(filters, pagination);
+  res.status(StatusCodes.OK).json(result);
+});
 
 export const getAllPlcData = AsyncHandler(async (req, res) => {
   const {

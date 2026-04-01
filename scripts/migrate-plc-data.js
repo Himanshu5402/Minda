@@ -54,6 +54,7 @@ async function migratePlcData() {
       table.create = false; // Table already exists
 
       // Add columns (Ensure names match DB schema exactly)
+      table.columns.add("_id", sql.UniqueIdentifier, { nullable: false, primary: true });
       table.columns.add("company_name", sql.VarChar(255), { nullable: true });
       table.columns.add("plant_name", sql.VarChar(255), { nullable: true });
       table.columns.add("line_number", sql.VarChar(50), { nullable: true });
@@ -62,8 +63,14 @@ async function migratePlcData() {
       table.columns.add("start_time", sql.DateTime, { nullable: true });
       table.columns.add("stop_time", sql.DateTime, { nullable: true });
       table.columns.add("status", sql.VarChar(255), { nullable: true });
+      table.columns.add("latch_force", sql.Int, { nullable: true });
+      table.columns.add("claw_force", sql.Int, { nullable: true });
+      table.columns.add("safety_lever", sql.Int, { nullable: true });
+      table.columns.add("claw_lever", sql.Int, { nullable: true });
+      table.columns.add("stroke", sql.Int, { nullable: true });
       table.columns.add("production_count", sql.Int, { nullable: true });
       table.columns.add("model", sql.VarChar(255), { nullable: true });
+      table.columns.add("alarm", sql.VarChar(255), { nullable: true });
       table.columns.add("extra_data", sql.NVarChar(sql.MAX), { nullable: true });
       table.columns.add("created_at", sql.DateTime, { nullable: false });
       table.columns.add("updated_at", sql.DateTime, { nullable: false });
@@ -72,34 +79,39 @@ async function migratePlcData() {
       batch.forEach(row => {
         const now = new Date();
         
-        // Define known columns
-        const knownKeys = [
-          "company_name", "companyname", "plant_name", "plantname", 
-          "line_number", "linenumber", "device_id", "timestamp", 
-          "start_time", "Start_time", "stop_time", "Stop_time", 
-          "status", "Status", "production_count", "model", "machine"
-        ];
-        
-        // Put everything else in extra_data
-        const extraData = {};
-        Object.keys(row).forEach(key => {
-          if (!knownKeys.includes(key)) {
-            extraData[key] = row[key];
-          }
-        });
+        // Extract nested objects from the new payload structure
+        const params = row.parameters || {};
+        const product = row.product || {};
+        const barcode = row.Barcode_details || {};
+        const machine = row.machine || {};
+
+        // Prepare extra_data object
+        // We want to store the original parameters, product, and barcode info
+        const extraData = {
+          ...params,
+          product: product,
+          Barcode_details: barcode
+        };
 
         table.rows.add(
-          row.company_name || row.companyname || null,
-          row.plant_name || row.plantname || null,
-          row.line_number || row.linenumber || null,
+          row._id || sql.VarChar(36).createValue(undefined), // Let DB generate UUID if missing
+          row.companyname || row.company_name || null,
+          row.plantname || row.plant_name || null,
+          row.linenumber || row.line_number || null,
           row.device_id || null,
           row.timestamp ? new Date(row.timestamp) : null,
-          row.start_time || row.Start_time ? new Date(row.start_time || row.Start_time) : null,
-          row.stop_time || row.Stop_time ? new Date(row.stop_time || row.Stop_time) : null,
-          row.status || row.Status || null,
+          row.Start_time || row.start_time ? new Date(row.Start_time || row.start_time) : null,
+          row.Stop_time || row.stop_time ? new Date(row.Stop_time || row.stop_time) : null,
+          row.Status || row.status || null,
+          params.LATCH_FORCE || null,
+          params.CLAW_FORCE || null,
+          params.SAFETY_LEVER || null,
+          params.CLAW_LEVER || null,
+          params.STROKE || null,
           row.production_count || null,
-          row.model || (row.machine ? row.machine.model : null) || null,
-          Object.keys(extraData).length > 0 ? JSON.stringify(extraData) : null,
+          product.model || machine.model || row.model || null,
+          params.ALARM || null,
+          JSON.stringify(extraData),
           now,
           now
         );

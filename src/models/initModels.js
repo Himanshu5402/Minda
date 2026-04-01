@@ -21,6 +21,8 @@ import { WorkflowApprovalModel } from "./workflowApproval.model.js";
 import { PlcDataModel } from "./plcData.model.js";
 import { PlcProductModel } from "./plcProduct.model.js";
 import { QualityCheckModel } from "./qualityCheck.model.js";
+import { PlcDashboardModel } from "./plcDashboard.model.js";
+import { WorkerConfigModel } from "./workerConfig.model.js";
 
 let modelsInitialized = false;
 
@@ -191,7 +193,9 @@ export const initModels = () => {
         WorkflowApprovalModel,
         PlcDataModel,
         PlcProductModel,
-        QualityCheckModel
+        QualityCheckModel,
+        PlcDashboardModel,
+        WorkerConfigModel
     };
 };
 
