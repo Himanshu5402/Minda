@@ -595,22 +595,58 @@ export const getPlcListingService = async (filters = {}) => {
 
   await attachProductToPlcData(data)
 
-  // 🔥 Latest per device logic (frontend se yaha shift)
+  // ─── Helper: build the composite key for (device_id, model, part_no) ────────
+  const compositeKey = (item) => {
+    const deviceId  = item.device_id                        || 'Unknown'
+    const model     = item.product?.model     ?? item.machine?.model ?? 'Unknown'
+    const partNo    = item.product?.part_no                 || 'Unknown'
+    return `${deviceId}||${model}||${partNo}`
+  }
+
+  // ─── Latest record per (device_id, model, part_no) ──────────────────────────
   const deviceMap = new Map()
 
   data.forEach((item) => {
-    const deviceId = item.device_id || 'Unknown'
-
-    const existing = deviceMap.get(deviceId)
+    const key      = compositeKey(item)
+    const existing = deviceMap.get(key)
 
     if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
-      deviceMap.set(deviceId, item)
+      deviceMap.set(key, item)
     }
   })
 
   let result = Array.from(deviceMap.values())
 
-  // 🔥 Status filter (backend me)
+  // ─── Backfill production_count for stopped machines ─────────────────────────
+  // data is already sorted DESC by created_at, so the first match is the
+  // most-recent "running" record for that (device_id, model, part_no) group.
+  result = result.map((item) => {
+    const isStopped  = (item.status || '').toLowerCase() === 'stopped'
+    const hasNoCount = item.production_count == null || item.production_count === 0
+
+    if (isStopped && hasNoCount) {
+      const itemKey = compositeKey(item)
+
+      const lastRunningRecord = data.find(
+        (r) =>
+          compositeKey(r) === itemKey &&
+          (r.status || '').toLowerCase() === 'running' &&
+          r.production_count != null &&
+          r.production_count > 0
+      )
+
+      if (lastRunningRecord) {
+        return {
+          ...item.toJSON(),
+          production_count: lastRunningRecord.production_count,
+        }
+      }
+    }
+
+    return item
+  })
+
+  // ─── Optional status filter ──────────────────────────────────────────────────
   if (filters.status) {
     const sel = filters.status.toLowerCase()
     result = result.filter((r) => (r.status || '').toLowerCase() === sel)
