@@ -16,6 +16,7 @@ import { BadRequestError, Customerror } from "./utils/errorHandler.js";
 import mainRoutes from "./routes.js";
 import { StatusCodes } from "http-status-codes";
 import { startPlcDashboardWorker } from "./services/plcDashboardWorker.service.js";
+import { startMachineHistoryWorker } from "./services/machineHistoryWorker.service.js";
 
 
 const SERVER_PORT = 9021;
@@ -71,10 +72,11 @@ function errorHandler(app) {
     });
 }
 
-function Connections() {
+async function Connections() {
     // Initialize database connections or other services here
-    CheckDbConnection();
+    await CheckDbConnection();
     startPlcDashboardWorker();
+    startMachineHistoryWorker();
 }
 
 function StartServer(app) {

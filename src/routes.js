@@ -25,6 +25,7 @@ import { createPlcData } from "./controller/plcData.controller.js";
 import PlcProductRoutes from "./routes/plcProduct.routes.js";
 import QualityCheckRoutes from "./routes/qualityCheck.routes.js";
 import PlcDashboardRoutes from "./routes/plcDashboard.routes.js";
+import MachineHistoryRoutes from "./routes/machineHistory.routes.js";
 import StatusHistourRoutes from "./routes/statusHistory.routes.js"
 import EmailRoutes from "./routes/email.routes.js"
 
@@ -55,6 +56,7 @@ routes.get("/plc-data/ping", (_req, res) => res.status(200).json({ message: "plc
 routes.post("/plc-data", createPlcData); // PLC machines push data - no auth required
 routes.use("/plc-data", PlcDataRoutes);
 routes.use("/plc-dashboard", Authorization, PlcDashboardRoutes);
+routes.use("/machine-history", Authorization, MachineHistoryRoutes);
 routes.use("/plc-products", Authorization, PlcProductRoutes);
 routes.use("/quality-check", Authorization, QualityCheckRoutes);
 routes.use("/status-history", Authorization, StatusHistourRoutes)

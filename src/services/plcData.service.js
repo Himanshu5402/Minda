@@ -679,7 +679,51 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     WHERE prev_stop_time IS NOT NULL;
   `
 
-  const [data, [countResult], [totalMachinesResult], [totalStoppedMachinesResult], allDevicesResult] = await Promise.all([
+  const totalDowntimeQuery = `
+    WITH UniqueData AS (
+      SELECT device_id, start_time, stop_time,
+             ROW_NUMBER() OVER (
+               PARTITION BY device_id, start_time, stop_time
+               ORDER BY start_time DESC
+             ) AS rn
+      FROM plc_data
+      ${whereClause}
+    ),
+    FilteredData AS (
+      SELECT *
+      FROM UniqueData
+      WHERE rn = 1
+    ),
+    GapCalculated AS (
+      SELECT *,
+             LAG(stop_time) OVER (
+               PARTITION BY device_id
+               ORDER BY start_time
+             ) AS prev_stop_time
+      FROM FilteredData
+    ),
+    FinalData AS (
+      SELECT *,
+             CASE 
+               WHEN prev_stop_time IS NOT NULL AND DATEDIFF(SECOND, prev_stop_time, start_time) > 0 
+               THEN DATEDIFF(MINUTE, prev_stop_time, start_time) 
+               ELSE 0 
+             END AS stopped_duration
+      FROM GapCalculated
+    )
+    SELECT SUM(stopped_duration) as totalDowntime
+    FROM FinalData
+    WHERE prev_stop_time IS NOT NULL;
+  `
+
+  const [
+    data,
+    [countResult],
+    [totalDowntimeResult],
+    [totalMachinesResult],
+    [totalStoppedMachinesResult],
+    allDevicesResult,
+  ] = await Promise.all([
     sequelize.query(query, {
       replacements,
       type: Sequelize.QueryTypes.SELECT,
@@ -690,35 +734,27 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
       replacements,
       type: Sequelize.QueryTypes.SELECT,
     }),
-    sequelize.query('SELECT COUNT(DISTINCT device_id) as count FROM plc_data', {
+    sequelize.query(totalDowntimeQuery, {
+      replacements,
       type: Sequelize.QueryTypes.SELECT,
     }),
     sequelize.query(
-      `WITH UniqueData AS (
-         SELECT device_id, start_time, stop_time,
-                ROW_NUMBER() OVER (
-                  PARTITION BY device_id, start_time, stop_time
-                  ORDER BY start_time DESC
-                ) AS rn
+      `SELECT COUNT(DISTINCT device_id) as count FROM plc_data ${filters.machine_name ? 'WHERE (device_id LIKE :machine_name OR model LIKE :machine_name)' : ''}`,
+      {
+        replacements,
+        type: Sequelize.QueryTypes.SELECT,
+      }
+    ),
+    sequelize.query(
+      `WITH LatestStatus AS (
+         SELECT device_id, status,
+                ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY created_at DESC) as rn
          FROM plc_data
-         ${whereClause}
-       ),
-       FilteredData AS (
-         SELECT *
-         FROM UniqueData
-         WHERE rn = 1
-       ),
-       GapCalculated AS (
-         SELECT device_id,
-                LAG(stop_time) OVER (
-                  PARTITION BY device_id
-                  ORDER BY start_time
-                ) AS prev_stop_time
-         FROM FilteredData
+         ${filters.machine_name ? 'WHERE (device_id LIKE :machine_name OR model LIKE :machine_name)' : ''}
        )
-       SELECT COUNT(DISTINCT device_id) as count
-       FROM GapCalculated
-       WHERE prev_stop_time IS NOT NULL;`,
+       SELECT COUNT(*) as count
+       FROM LatestStatus
+       WHERE rn = 1 AND status = 'Stopped';`,
       {
         replacements,
         type: Sequelize.QueryTypes.SELECT,
@@ -730,6 +766,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
   ])
 
   const total = countResult?.total || 0
+  const totalDowntime = totalDowntimeResult?.totalDowntime || 0
   const totalMachines = totalMachinesResult?.count || 0
   const totalStoppedMachines = totalStoppedMachinesResult?.count || 0
   const allDevices = allDevicesResult?.map((d) => d.device_id) || []
@@ -739,6 +776,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     data: data.map((item) => (item.toJSON ? item.toJSON() : item)),
     totalMachines,
     totalStoppedMachines,
+    totalDowntime,
     allDevices,
     pagination: {
       total,
