@@ -196,47 +196,33 @@ async function processMachineHistory() {
         lastStateCache.set(cacheKey, lastState);
       }
 
-      // 🔥 Skip zero or negative counts
-      if (d.production_count <= 0) {
+      // � Check if anything has changed (count or status)
+      const hasCountIncreased = d.production_count > lastState.production_count;
+      const hasStatusChanged  = d.status !== lastState.status;
+
+      // 🔥 If count is 0, only save if status has changed (to avoid constant 0-count entries)
+      if (d.production_count <= 0 && !hasStatusChanged) {
         lastCreatedAt = d.created_at;
         lastId = d._id;
         continue;
       }
 
-      // 🔥 Skip exact duplicates
-      if (
-        d.production_count === lastState.production_count &&
-        d.status === lastState.status
-      ) {
+      // 🔥 If nothing changed (both same), skip
+      if (!hasCountIncreased && !hasStatusChanged) {
         lastCreatedAt = d.created_at;
         lastId = d._id;
         continue;
       }
 
-      // ✅ Only save on count increase
-      if (d.production_count <= lastState.production_count) {
-        lastCreatedAt = d.created_at;
-        lastId = d._id;
-        continue;
-      }
-
-      // 🔥 DB-level duplicate protection
-      const alreadyExists = await MachineHistoryModel.findOne({
-        where: {
-          device_id:        d.device_id,
-          part_no:          d.part_no,
-          production_count: d.production_count,
-        },
-      });
-
-      if (alreadyExists) {
+      // 🔥 If count decreased and status didn't change, skip
+      if (d.production_count < lastState.production_count && !hasStatusChanged) {
         lastCreatedAt = d.created_at;
         lastId = d._id;
         continue;
       }
 
       logger.info(
-        `✅ ${d.device_id} | Part: ${d.part_no} | Model: ${d.model} | Count: ${lastState.production_count} → ${d.production_count}`
+        `📡 [${d.device_id}] Status: ${lastState.status} -> ${d.status} | Count: ${lastState.production_count} -> ${d.production_count}`
       );
 
       // 🔹 Calculate start/stop/duration
