@@ -517,7 +517,45 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     productSummaries,
   };
 };
+export const getPlcListingService = async (filters = {}) => {
+  const where = buildDbWhere(filters, Op)
 
+  if (filters.company_name) where.company_name = filters.company_name
+  if (filters.plant_name) where.plant_name = filters.plant_name
+  if (filters.device_id) {
+    where.device_id = { [Op.like]: `%${filters.device_id}%` }
+  }
+
+  const data = await PlcDataModel.findAll({
+    where,
+    order: [['created_at', 'DESC']],
+  })
+
+  await attachProductToPlcData(data)
+
+  // 🔥 Latest per device logic (frontend se yaha shift)
+  const deviceMap = new Map()
+
+  data.forEach((item) => {
+    const deviceId = item.device_id || 'Unknown'
+
+    const existing = deviceMap.get(deviceId)
+
+    if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
+      deviceMap.set(deviceId, item)
+    }
+  })
+
+  let result = Array.from(deviceMap.values())
+
+  // 🔥 Status filter (backend me)
+  if (filters.status) {
+    const sel = filters.status.toLowerCase()
+    result = result.filter((r) => (r.status || '').toLowerCase() === sel)
+  }
+
+  return result
+}
 export const getMachineStoppageService = async (filters = {}, pagination = {}) => {
   const page = Math.max(pagination.page || 1, 1)
   const limit = Math.min(pagination.limit || 10, 100)
