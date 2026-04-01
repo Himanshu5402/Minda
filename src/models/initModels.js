@@ -23,6 +23,7 @@ import { PlcProductModel } from "./plcProduct.model.js";
 import { QualityCheckModel } from "./qualityCheck.model.js";
 import { PlcDashboardModel } from "./plcDashboard.model.js";
 import { WorkerConfigModel } from "./workerConfig.model.js";
+import { MachineHistoryModel } from "./machineHistory.model.js";
 
 let modelsInitialized = false;
 
@@ -195,7 +196,8 @@ export const initModels = () => {
         PlcProductModel,
         QualityCheckModel,
         PlcDashboardModel,
-        WorkerConfigModel
+        WorkerConfigModel,
+        MachineHistoryModel
     };
 };
 
