@@ -17,6 +17,7 @@ import {
   getPlcDowntimeByErrorService,
   getPlcDowntimeByErrorStatusService,
   getPlcListingService,
+  getPlcReportOptionsService,
 } from '../services/plcData.service.js'
 
 export const createPlcData = AsyncHandler(async (req, res) => {
@@ -604,6 +605,14 @@ export const getPlcDowntimeByMachine = AsyncHandler(async (req, res) => {
     data: result,
   })
 })
+
+export const getPlcReportOptions = AsyncHandler(async (req, res) => {
+  const result = await getPlcReportOptionsService();
+  res.status(StatusCodes.OK).json({
+    message: 'PLC Report Options fetched successfully',
+    data: result,
+  });
+});
 
 export const getPlcTimeDistribution = AsyncHandler(async (req, res) => {
   const { startDate, endDate, companyName, plantName, deviceId, model, status } = req.query;

@@ -16,7 +16,8 @@ import {
   getPlcDowntimeByErrorStatus,
   downloadPlcReportExcel,
   downloadPlcReportPdf,
-  getPlcListing
+  getPlcListing,
+  getPlcReportOptions,
 } from "../controller/plcData.controller.js";
 
 const router = Router();
@@ -33,7 +34,7 @@ router.get("/analytics/downtime-by-error-status", getPlcDowntimeByErrorStatus);
 router.get("/machine-performance", getMachinePerformance);
 router.get("/report/download-pdf",   downloadPlcReportPdf);
 router.get("/report/download-excel", downloadPlcReportExcel);
-router.get("/report", getPlcReport);
+router.get("/report/options", getPlcReportOptions);
 router.get("/", getAllPlcData);
 router.get("/listing", getPlcListing);
 router.get("/:id", getPlcDataById);

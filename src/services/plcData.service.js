@@ -517,6 +517,27 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     productSummaries,
   };
 };
+export const getPlcReportOptionsService = async () => {
+  const companies = await PlcDataModel.findAll({
+    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('company_name')), 'company_name']],
+    raw: true,
+  });
+  const plants = await PlcDataModel.findAll({
+    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('plant_name')), 'plant_name']],
+    raw: true,
+  });
+  const models = await PlcDataModel.findAll({
+    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('model')), 'model']],
+    raw: true,
+  });
+
+  return {
+    companies: companies.map((c) => c.company_name).filter(Boolean),
+    plants: plants.map((p) => p.plant_name).filter(Boolean),
+    models: models.map((m) => m.model).filter(Boolean),
+  };
+};
+
 export const getPlcListingService = async (filters = {}) => {
   const where = buildDbWhere(filters, Op)
 
