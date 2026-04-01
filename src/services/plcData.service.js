@@ -709,6 +709,15 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     replacements.to_date = filters.to_date
   }
 
+  // Keep summary cards aligned with same stoppage filters.
+  let summaryWhereClause = 'WHERE 1=1'
+  if (filters.machine_name) {
+    summaryWhereClause += ' AND (device_id LIKE :machine_name OR model LIKE :machine_name)'
+  }
+  if (filters.from_date && filters.to_date) {
+    summaryWhereClause += ' AND start_time BETWEEN :from_date AND :to_date'
+  }
+
   // Updated query to calculate gap-based stoppage duration between consecutive records
   const query = `
     WITH UniqueData AS (
@@ -837,7 +846,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
       type: Sequelize.QueryTypes.SELECT,
     }),
     sequelize.query(
-      `SELECT COUNT(DISTINCT device_id) as count FROM plc_data ${filters.machine_name ? 'WHERE (device_id LIKE :machine_name OR model LIKE :machine_name)' : ''}`,
+      `SELECT COUNT(DISTINCT device_id) as count FROM plc_data ${summaryWhereClause}`,
       {
         replacements,
         type: Sequelize.QueryTypes.SELECT,
@@ -846,21 +855,25 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     sequelize.query(
       `WITH LatestStatus AS (
          SELECT device_id, status,
-                ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY created_at DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY timestamp DESC, created_at DESC) as rn
          FROM plc_data
-         ${filters.machine_name ? 'WHERE (device_id LIKE :machine_name OR model LIKE :machine_name)' : ''}
+         ${summaryWhereClause}
        )
        SELECT COUNT(*) as count
        FROM LatestStatus
-       WHERE rn = 1 AND status = 'Stopped';`,
+       WHERE rn = 1 AND LOWER(LTRIM(RTRIM(COALESCE(status, '')))) = 'stopped';`,
       {
         replacements,
         type: Sequelize.QueryTypes.SELECT,
       },
     ),
-    sequelize.query('SELECT DISTINCT device_id FROM plc_data WHERE device_id IS NOT NULL', {
-      type: Sequelize.QueryTypes.SELECT,
-    }),
+    sequelize.query(
+      `SELECT DISTINCT device_id FROM plc_data ${summaryWhereClause} AND device_id IS NOT NULL`,
+      {
+        replacements,
+        type: Sequelize.QueryTypes.SELECT,
+      },
+    ),
   ])
 
   const total = countResult?.total || 0
