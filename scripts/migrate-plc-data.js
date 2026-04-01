@@ -1,6 +1,6 @@
-import axios from "axios";
-import sql from "mssql";
-import { config } from "../src/config.js";
+import axios from 'axios'
+import sql from 'mssql'
+import { config } from '../src/config.js'
 
 async function migratePlcData() {
   try {
@@ -20,38 +20,38 @@ async function migratePlcData() {
         min: 0,
         idleTimeoutMillis: 30000,
       },
-    };
-
-    console.log(`Connecting to database ${config.DB_NAME} on ${config.DB_HOST}...`);
-    const pool = await sql.connect(dbConfig);
-    console.log("Connected to MSSQL successfully.");
-
-    // 2. Fetch data from API
-    const apiUrl = "https://digitisationapi.jpmgroup.co.in/api/v1/plc-data";
-    console.log(`Fetching data from ${apiUrl}...`);
-    const res = await axios.get(apiUrl);
-    
-    // Adjust based on actual API response structure
-    const data = res.data.data || res.data; 
-    
-    if (!Array.isArray(data)) {
-      console.error("API response data is not an array:", data);
-      return;
     }
 
-    console.log(`Fetched ${data.length} records. Starting bulk migration...`);
-    console.time("MigrationTime");
+    console.log(`Connecting to database ${config.DB_NAME} on ${config.DB_HOST}...`)
+    const pool = await sql.connect(dbConfig)
+    console.log('Connected to MSSQL successfully.')
+
+    // 2. Fetch data from API
+    const apiUrl = 'https://digitisationapi.jpmgroup.co.in/api/v1/plc-data'
+    console.log(`Fetching data from ${apiUrl}...`)
+    const res = await axios.get(apiUrl)
+
+    // Adjust based on actual API response structure
+    const data = res.data.data || res.data
+
+    if (!Array.isArray(data)) {
+      console.error('API response data is not an array:', data)
+      return
+    }
+
+    console.log(`Fetched ${data.length} records. Starting bulk migration...`)
+    console.time('MigrationTime')
 
     // 3. Batch processing
-    const batchSize = 1000;
-    let totalInserted = 0;
-    
+    const batchSize = 1000
+    let totalInserted = 0
+
     for (let i = 0; i < data.length; i += batchSize) {
-      const batch = data.slice(i, i + batchSize);
-      
+      const batch = data.slice(i, i + batchSize)
+
       // Use sql.Table for bulk insert
-      const table = new sql.Table("plc_data");
-      table.create = false; // Table already exists
+      const table = new sql.Table('plc_data')
+      table.create = false // Table already exists
 
       // Add columns (Ensure names match DB schema exactly)
       table.columns.add("_id", sql.UniqueIdentifier, { nullable: false, primary: true });
@@ -113,22 +113,24 @@ async function migratePlcData() {
           params.ALARM || null,
           JSON.stringify(extraData),
           now,
-          now
-        );
-      });
+          now,
+        )
+      })
 
       // Perform bulk insert
-      await pool.request().bulk(table);
-      totalInserted += batch.length;
-      console.log(`✅ Inserted batch ${Math.floor(i / batchSize) + 1} (${batch.length} rows). Total: ${totalInserted}`);
+      await pool.request().bulk(table)
+      totalInserted += batch.length
+      console.log(
+        `✅ Inserted batch ${Math.floor(i / batchSize) + 1} (${batch.length} rows). Total: ${totalInserted}`,
+      )
     }
 
-    console.timeEnd("MigrationTime");
-    console.log("🚀 All Data Imported Successfully");
-    await pool.close();
+    console.timeEnd('MigrationTime')
+    console.log('🚀 All Data Imported Successfully')
+    await pool.close()
   } catch (error) {
-    console.error("❌ Migration failed:", error);
-    process.exit(1);
+    console.error('❌ Migration failed:', error)
+    process.exit(1)
   }
 }
 
