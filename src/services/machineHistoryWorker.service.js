@@ -10,6 +10,8 @@ const WORKER_NAME = "machine_history_worker";
 
 let isProcessing = false;
 
+// ✅ UPDATED: cacheKey ab device_id + model + part_no se banega
+// Kyunki har model ki apni alag production hoti hai
 const lastStateCache = new Map();
 
 /**
@@ -37,8 +39,6 @@ function normalizePlcData(data) {
   const extraData = parseExtraData(data.extra_data);
 
   // ── Product ──────────────────────────────────────────────
-  // Top-level product field (Format 2) takes priority
-  // Fallback to extra_data.product (Format 1)
   let product = {};
 
   if (data.product && typeof data.product === "object") {
@@ -57,7 +57,6 @@ function normalizePlcData(data) {
   } else if (data.parameters && typeof data.parameters === "string") {
     try { parameters = JSON.parse(data.parameters); } catch { parameters = {}; }
   } else {
-    // Format 1: parameters scattered in extra_data
     parameters = extraData || {};
   }
 
@@ -169,15 +168,25 @@ async function processMachineHistory() {
       // ✅ Normalize both formats into one shape
       const d = normalizePlcData(raw);
 
-      // 🔑 Unique cache key per device + part_no
-      const cacheKey = `${d.device_id}::${d.part_no}`;
+      // ✅ UPDATED cacheKey:
+      // Pehle sirf device_id + model + part_no + count tha
+      // Ab device_id + model + part_no + count + start_time hai
+      //
+      // Kyun?
+      // Har model aur specific session (start_time) ki production alag ho sakti hai
+      const cacheKey = `${d.device_id}::${d.model}::${d.part_no}::${d.production_count}::${d.start_time}`;
 
       // 🔹 Get last state (cache → DB fallback)
       let lastState = lastStateCache.get(cacheKey);
 
       if (!lastState) {
         const lastHistory = await MachineHistoryModel.findOne({
-          where: { device_id: d.device_id, part_no: d.part_no },
+          where: {
+            device_id: d.device_id,
+            // ✅ UPDATED: DB lookup bhi model se filter hoga
+            ...(d.model ? { model: d.model } : {}),
+            part_no: d.part_no,
+          },
           order: [["timestamp", "DESC"]],
         });
 
@@ -196,25 +205,45 @@ async function processMachineHistory() {
         lastStateCache.set(cacheKey, lastState);
       }
 
-      // � Check if anything has changed (count or status)
+      // ─────────────────────────────────────────────────────────
+      // ✅ DEDUPLICATION LOGIC
+      // Frontend mein yeh tha:
+      //   key = `${device_id}_${model}_${production_count}_${Status}`
+      //   Same key → SKIP
+      //
+      // Worker mein same logic:
+      //   hasCountIncreased → count badhaa hai?
+      //   hasStatusChanged  → status badla hai?
+      //
+      // SAVE kab hoga:
+      //   ✅ Count badha  (10 → 11)
+      //   ✅ Status badla (running → stopped)
+      //   ✅ Dono badle
+      //
+      // SKIP kab hoga:
+      //   ❌ Count 0 hai aur status bhi same hai
+      //   ❌ Kuch bhi nahi badla (count same, status same)
+      //   ❌ Count ghata aur status bhi same hai
+      // ─────────────────────────────────────────────────────────
+
       const hasCountIncreased = d.production_count > lastState.production_count;
       const hasStatusChanged  = d.status !== lastState.status;
 
-      // 🔥 If count is 0, only save if status has changed (to avoid constant 0-count entries)
+      // ❌ SKIP: count 0 aur status bhi same
       if (d.production_count <= 0 && !hasStatusChanged) {
         lastCreatedAt = d.created_at;
         lastId = d._id;
         continue;
       }
 
-      // 🔥 If nothing changed (both same), skip
+      // ❌ SKIP: bilkul kuch nahi badla
       if (!hasCountIncreased && !hasStatusChanged) {
         lastCreatedAt = d.created_at;
         lastId = d._id;
         continue;
       }
 
-      // 🔥 If count decreased and status didn't change, skip
+      // ❌ SKIP: count ghata aur status bhi same (reset case, ignore karo)
       if (d.production_count < lastState.production_count && !hasStatusChanged) {
         lastCreatedAt = d.created_at;
         lastId = d._id;
@@ -222,7 +251,7 @@ async function processMachineHistory() {
       }
 
       logger.info(
-        `📡 [${d.device_id}] Status: ${lastState.status} -> ${d.status} | Count: ${lastState.production_count} -> ${d.production_count}`
+        `📡 [${d.device_id}] Model: ${d.model} | Part: ${d.part_no} | Status: ${lastState.status} → ${d.status} | Count: ${lastState.production_count} → ${d.production_count}`
       );
 
       // 🔹 Calculate start/stop/duration
@@ -268,7 +297,7 @@ async function processMachineHistory() {
         plc_data_id:      d._id,
       });
 
-      // 🔹 Update cache
+      // 🔹 Update cache with new state
       lastStateCache.set(cacheKey, {
         status:           d.status,
         production_count: d.production_count,
@@ -279,6 +308,7 @@ async function processMachineHistory() {
       lastId = d._id;
     }
 
+    // ✅ Save last processed cursor
     await config.update({
       last_processed_timestamp: lastCreatedAt,
       last_processed_id: lastId,
