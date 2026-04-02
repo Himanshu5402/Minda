@@ -3,7 +3,8 @@ import { StatusCodes } from "http-status-codes";
 import { 
   getMachineHistoryService, 
   getMachineSummaryService, 
-  getMachineLatestStatusService 
+  getMachineLatestStatusService,
+  getMachineModelOptionsService,
 } from "../services/machineHistory.service.js";
 
 export const getMachineHistory = AsyncHandler(async (req, res) => {
@@ -51,5 +52,22 @@ export const getMachineLatestStatus = AsyncHandler(async (req, res) => {
   res.status(StatusCodes.OK).json({
     message: "Machine latest status fetched successfully",
     data: result,
+  });
+});
+
+export const getMachineModelOptions = AsyncHandler(async (req, res) => {
+  const { device_id } = req.query;
+
+  if (!device_id) {
+    return res.status(StatusCodes.BAD_REQUEST).json({ message: "device_id is required" });
+  }
+
+  const result = await getMachineModelOptionsService(device_id);
+
+  res.status(StatusCodes.OK).json({
+    message: "Machine model options fetched successfully",
+    data: {
+      models: result,
+    },
   });
 });

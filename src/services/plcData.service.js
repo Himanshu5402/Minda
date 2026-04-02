@@ -441,7 +441,7 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
 
   const rawRows = await PlcDataModel.findAll({
     where,
-    order: [['created_at', 'DESC'], ['timestamp', 'DESC']],
+    order: [['timestamp', 'ASC']],
   })
 
   await attachProductToPlcData(rawRows)
@@ -602,7 +602,7 @@ export const getPlcListingService = async (filters = {}) => {
 
   const data = await PlcDataModel.findAll({
     where,
-    order: [['created_at', 'DESC'], ['timestamp', 'DESC']],
+    order: [['timestamp', 'ASC']],
   })
 
   await attachProductToPlcData(data)

@@ -1,4 +1,5 @@
 import { MachineHistoryModel } from "../models/machineHistory.model.js";
+import { PlcDataModel } from "../models/plcData.model.js";
 import { Op, Sequelize } from "sequelize";
 import { sequelize } from "../sequelize.js";
 
@@ -193,54 +194,62 @@ export const getMachineSummaryService = async (filters = {}) => {
     col: "model",
   });
 
-  // ✅ Total production — Delta-based calculation
-  //
-  // Problem: Machine ka counter cumulative hota hai (reset nahi hota)
-  //   Session1: 1 → 2 → 4 (stopped)
-  //   Session2: 5           (counter continue hua, sirf 1 naya piece bana)
-  //
-  // Galat logic: MAX(s1) + MAX(s2) = 4 + 5 = 9 ❌
-  // Sahi logic:  delta(s1) + delta(s2) = 4 + (5-4) = 5 ✅
-  //
-  // Agar counter reset hua (curr < prevMax) toh curr ko directly add karo
-  const productionResults = await MachineHistoryModel.findAll({
-    where,
-    attributes: [
-      "model",
-      "start_time",
-      [Sequelize.fn("MAX", Sequelize.col("production_count")), "max_prod"],
-    ],
-    group: ["model", "start_time"],
-    order: [
-      ["model",      "ASC"],
-      ["start_time", "ASC"],  // oldest session pehle taaki delta sahi nikle
-    ],
+  // ✅ Total production — same logic as report/listing OK count:
+  // latest row per barcode, then count only "ok".
+  const plcWhere = { device_id };
+  if (status) plcWhere.status = status.toLowerCase();
+  if (model) plcWhere.model = { [Op.like]: `%${model}%` };
+  if (timestampWhere) plcWhere.timestamp = timestampWhere;
+
+  const plcRows = await PlcDataModel.findAll({
+    where: plcWhere,
+    attributes: ["extra_data", "timestamp", "created_at"],
+    order: [["timestamp", "DESC"], ["created_at", "DESC"]],
     raw: true,
   });
 
-  // Model-wise sessions group karo
-  const sessionsByModel = {};
-  productionResults.forEach((r) => {
-    const key = r.model || "unknown";
-    if (!sessionsByModel[key]) sessionsByModel[key] = [];
-    sessionsByModel[key].push(Number(r.max_prod) || 0);
-  });
-
-  // Har model ke sessions pe delta calculate karo
-  let total_production = 0;
-  Object.values(sessionsByModel).forEach((sessions) => {
-    let prevMax = 0;
-    sessions.forEach((curr) => {
-      if (curr > prevMax) {
-        // Counter aage badha → sirf naya delta add karo
-        total_production += curr - prevMax;
-      } else {
-        // Counter reset hua (naya batch) → poora count add karo
-        total_production += curr;
+  const parseMaybeJson = (value) => {
+    if (!value) return null;
+    if (typeof value === "object") return value;
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch (_) {
+        return null;
       }
-      prevMax = curr;
-    });
-  });
+    }
+    return null;
+  };
+  const getBarcodeId = (row) => {
+    const extra = parseMaybeJson(row?.extra_data) || {};
+    const barcodeDetails = parseMaybeJson(extra?.Barcode_details);
+    if (!barcodeDetails || typeof barcodeDetails !== "object") return null;
+    const id =
+      barcodeDetails?.BarcodeID ??
+      barcodeDetails?.BarcodeId ??
+      barcodeDetails?.barcode_id ??
+      barcodeDetails?.BarcodeTag ??
+      null;
+    const s = id == null ? "" : String(id).trim();
+    return s || null;
+  };
+  const isOk = (row) => {
+    const extra = parseMaybeJson(row?.extra_data) || {};
+    const err = String(extra?.ERROR_STATUS ?? extra?.error_status ?? "").trim().toLowerCase();
+    return err === "ok";
+  };
+
+  const latestBarcodeById = new Map();
+  for (const r of plcRows) {
+    const barcodeId = getBarcodeId(r);
+    if (!barcodeId || latestBarcodeById.has(barcodeId)) continue;
+    latestBarcodeById.set(barcodeId, r);
+  }
+
+  let total_production = 0;
+  for (const latestRow of latestBarcodeById.values()) {
+    if (isOk(latestRow)) total_production += 1;
+  }
 
   return {
     total_products:          total_products || 0,
@@ -268,4 +277,17 @@ export const getMachineLatestStatusService = async (device_id) => {
     part_no:          latest.part_no,
     model:            latest.model,
   };
+};
+
+/**
+ * Fetch distinct model options for a device in machine history.
+ */
+export const getMachineModelOptionsService = async (device_id) => {
+  const rows = await MachineHistoryModel.findAll({
+    where: { device_id },
+    attributes: [[Sequelize.fn("DISTINCT", Sequelize.col("model")), "model"]],
+    raw: true,
+  });
+
+  return rows.map((r) => r.model).filter(Boolean);
 };
