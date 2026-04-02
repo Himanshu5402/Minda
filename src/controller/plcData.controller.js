@@ -599,10 +599,14 @@ export const getPlcDataById = AsyncHandler(async (req, res) => {
 
 export const getPlcListing = async (req, res, next) => {
   try {
-    const data = await getPlcListingService(req.query)
+    const result = await getPlcListingService(req.query)
     res.status(200).json({
       success: true,
-      data,
+      data: result?.rows || [],
+      summary: result?.summary || {
+        total_production_barcodes: 0,
+        total_error_barcodes: 0,
+      },
     })
   } catch (err) {
     next(err)

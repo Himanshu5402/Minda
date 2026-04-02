@@ -436,12 +436,12 @@ function buildDbWhere(filters, Op) {
 // Main service
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAllPlcReport = async (filters = {}, pagination = {}) => {
-  // 1️⃣  Fetch from DB — oldest first so dedup keeps the first scan per barcode
+    // 1️⃣  Fetch from DB (latest first) so dedup keeps the latest record per barcode
   const where = buildDbWhere(filters, Op)
 
   const rawRows = await PlcDataModel.findAll({
     where,
-    order: [['timestamp', 'ASC']],
+    order: [['created_at', 'DESC'], ['timestamp', 'DESC']],
   })
 
   await attachProductToPlcData(rawRows)
@@ -449,7 +449,7 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
   // 2️⃣  Map to clean report objects
   const mapped = rawRows.map((r) => mapRowToReport(r.toJSON()))
 
-  // 3️⃣  Deduplicate by BarcodeTag — keep FIRST (oldest) occurrence
+  // 3️⃣  Deduplicate by BarcodeTag — keep FIRST (latest) occurrence
   const barcodeMap = new Map()
   for (const row of mapped) {
     if (row.BarcodeTag && !barcodeMap.has(row.BarcodeTag)) {
@@ -602,7 +602,7 @@ export const getPlcListingService = async (filters = {}) => {
 
   const data = await PlcDataModel.findAll({
     where,
-    order: [['timestamp', 'DESC'], ['created_at', 'DESC']],
+    order: [['created_at', 'DESC'], ['timestamp', 'DESC']],
   })
 
   await attachProductToPlcData(data)
@@ -628,73 +628,126 @@ export const getPlcListingService = async (filters = {}) => {
   }
   const norm = (value) => String(value ?? 'Unknown').trim().toLowerCase()
   const getDeviceId = (row) => row?.device_id || 'Unknown'
-  const compositeKey = (row) => `${norm(getDeviceId(row))}||${norm(getModel(row))}`
   const toTs = (row) => {
     const dt = new Date(row?.created_at)
     const ts = dt.getTime()
     return Number.isFinite(ts) ? ts : 0
   }
-  const toCount = (value) => {
-    const num = Number(value)
-    return Number.isFinite(num) ? num : 0
+  const parseMaybeJson = (value) => {
+    if (!value) return null
+    if (typeof value === 'object') return value
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value)
+      } catch (_) {
+        return null
+      }
+    }
+    return null
   }
 
-  // Pass 1:
-  // - strict latest row per (device_id, model),
-  // - strict latest row per device_id (for final API row).
-  const latestRowByComposite = new Map()
-  const latestRowByDevice = new Map()
-  const latestCountByComposite = new Map()
+  const getErrorStatus = (plainRow) => {
+    const raw =
+      plainRow?.parameters?.ERROR_STATUS ??
+      plainRow?.parameters?.error_status ??
+      plainRow?.ERROR_STATUS ??
+      plainRow?.error_status
+    return String(raw ?? '').trim().toLowerCase()
+  }
 
+  const getBarcodeId = (plainRow) => {
+    const rawBarcodeDetails = plainRow?.Barcode_details
+    const barcodeDetails = parseMaybeJson(rawBarcodeDetails)
+    if (!barcodeDetails || typeof barcodeDetails !== 'object') return null
+
+    const id =
+      barcodeDetails?.BarcodeID ??
+      barcodeDetails?.BarcodeId ??
+      barcodeDetails?.barcode_id ??
+      barcodeDetails?.BarcodeTag ??
+      null
+
+    const s = id == null ? '' : String(id).trim()
+    return s ? s : null
+  }
+
+  const modelSel =
+    filters.model != null && String(filters.model).trim() !== ''
+      ? String(filters.model).trim().toLowerCase()
+      : null
+
+  // Latest row per device (for UI)
+  const latestRowByDevice = new Map()
   for (const row of data) {
     const deviceId = norm(getDeviceId(row))
-    const key = compositeKey(row)
+    const plainRow = toPlain(row)
     const rowTs = toTs(row)
-
-    const existingCombo = latestRowByComposite.get(key)
-    if (!existingCombo || rowTs > existingCombo.ts) {
-      latestRowByComposite.set(key, { row, ts: rowTs })
-    }
-
-    const existingDevice = latestRowByDevice.get(deviceId)
-    if (!existingDevice || rowTs > existingDevice.ts) {
-      latestRowByDevice.set(deviceId, { row: toPlain(row), ts: rowTs })
+    const existing = latestRowByDevice.get(deviceId)
+    if (!existing || rowTs > existing.ts) {
+      latestRowByDevice.set(deviceId, { row: plainRow, ts: rowTs })
     }
   }
 
-  // Pass 2: exactly one production_count per (device_id, model),
-  // using only the latest RUNNING record for that model.
-  for (const [key, { row: latestRow }] of latestRowByComposite.entries()) {
-    const lastRunningRecord = data.find((r) => {
-      if (compositeKey(r) !== key) return false
-      if (String(r?.status || '').toLowerCase() !== 'running') return false
-      return toCount(r?.production_count) >= 0
-    })
+  // Latest row per BarcodeID (created_at DESC via first-seen in ordered data),
+  // same direction as report card flow.
+  const latestBarcodeById = new Map()
+  for (const row of data) {
+    const plainRow = toPlain(row)
+    const barcodeId = getBarcodeId(plainRow)
+    if (!barcodeId) continue
+    if (modelSel && String(getModel(plainRow)).trim().toLowerCase() !== modelSel) {
+      continue
+    }
 
-    // If no running record exists for this model, do not include it in total.
-    if (!lastRunningRecord) continue
-
-    latestCountByComposite.set(key, toCount(lastRunningRecord.production_count))
+    if (!latestBarcodeById.has(barcodeId)) {
+      latestBarcodeById.set(barcodeId, plainRow)
+    }
   }
 
-  // Sum latest per-model counts into device-level production_count.
-  const deviceTotalMap = new Map()
-  for (const [key, count] of latestCountByComposite.entries()) {
-    const deviceId = key.split('||')[0]
-    deviceTotalMap.set(deviceId, (deviceTotalMap.get(deviceId) || 0) + toCount(count))
+  // Per-device production count using latest barcode record flow.
+  const barcodeOkSetByDevice = new Map()
+  for (const [barcodeId, latestRow] of latestBarcodeById.entries()) {
+    if (getErrorStatus(latestRow) === 'ok') {
+      const deviceId = norm(getDeviceId(latestRow))
+      if (!barcodeOkSetByDevice.has(deviceId)) {
+        barcodeOkSetByDevice.set(deviceId, new Set())
+      }
+      barcodeOkSetByDevice.get(deviceId).add(barcodeId)
+    }
   }
 
   let result = Array.from(latestRowByDevice.values()).map(({ row }) => ({
     ...row,
-    production_count: deviceTotalMap.get(norm(row.device_id || 'Unknown')) || 0,
+    production_count:
+      barcodeOkSetByDevice.get(norm(row.device_id || 'Unknown'))?.size || 0,
   }))
 
   if (filters.status) {
-    const sel = filters.status.toLowerCase()
-    result = result.filter((r) => String(r?.status || '').toLowerCase() === sel)
+    const sel = String(filters.status).toLowerCase()
+    result = result.filter(
+      (r) => String(r?.Status ?? r?.status ?? '').toLowerCase() === sel,
+    )
   }
 
-  return result
+  if (modelSel) {
+    result = result.filter((r) => String(getModel(r)).trim().toLowerCase() === modelSel)
+  }
+
+  let totalProductionBarcodes = 0
+  let totalErrorBarcodes = 0
+  for (const latestRow of latestBarcodeById.values()) {
+    const status = getErrorStatus(latestRow)
+    if (status === 'ok') totalProductionBarcodes += 1
+    else totalErrorBarcodes += 1
+  }
+
+  return {
+    rows: result,
+    summary: {
+      total_production_barcodes: totalProductionBarcodes,
+      total_error_barcodes: totalErrorBarcodes,
+    },
+  }
 }
 export const getMachineStoppageService = async (filters = {}, pagination = {}) => {
   const page = Math.max(pagination.page || 1, 1)
@@ -1396,11 +1449,20 @@ export const getPlcDowntimeByErrorService = async (filters = {}) => {
 export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
   const { startDate, endDate, companyName, plantName, deviceId, model } = filters
 
+  const errorStatusExpr = `
+    COALESCE(
+      JSON_VALUE(extra_data, '$.ERROR_STATUS'),
+      JSON_VALUE(extra_data, '$.error_status'),
+      JSON_VALUE(extra_data, '$.parameters.ERROR_STATUS'),
+      JSON_VALUE(extra_data, '$.parameters.error_status')
+    )
+  `
+
   let whereClause = `
-    WHERE status = 'Stopped' 
-      AND stop_time IS NOT NULL 
-      AND JSON_VALUE(extra_data, '$.ERROR_STATUS') IS NOT NULL 
-      AND LOWER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) <> 'ok'
+    WHERE stop_time IS NOT NULL 
+      AND ${errorStatusExpr} IS NOT NULL 
+      AND LTRIM(RTRIM(${errorStatusExpr})) <> ''
+      AND LOWER(LTRIM(RTRIM(${errorStatusExpr}))) <> 'ok'
   `
   const replacements = {}
 
@@ -1432,11 +1494,12 @@ export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
 
   const query = `
     SELECT 
-      UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) AS error_status, 
+      UPPER(LTRIM(RTRIM(${errorStatusExpr}))) AS error_status, 
       SUM(DATEDIFF(MINUTE, start_time, stop_time)) AS total_downtime 
     FROM plc_data 
     ${whereClause}
-    GROUP BY UPPER(LTRIM(RTRIM(JSON_VALUE(extra_data, '$.ERROR_STATUS')))) 
+    GROUP BY UPPER(LTRIM(RTRIM(${errorStatusExpr}))) 
+    HAVING SUM(DATEDIFF(MINUTE, start_time, stop_time)) > 0
     ORDER BY total_downtime DESC;
   `
 
