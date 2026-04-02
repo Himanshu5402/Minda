@@ -169,16 +169,12 @@ async function processMachineHistory() {
       const d = normalizePlcData(raw);
 
       // ✅ UPDATED cacheKey:
-      // Pehle sirf device_id + part_no tha
-      // Ab device_id + model + part_no hai
+      // Pehle sirf device_id + model + part_no + count tha
+      // Ab device_id + model + part_no + count + start_time hai
       //
       // Kyun?
-      // Device-A, ModelX, count=10 → SAVE ✅
-      // Device-A, ModelY, count=10 → pehle SKIP hota tha ❌ (WRONG)
-      //                            → ab SAVE hoga ✅ (CORRECT)
-      //
-      // Har model ki production alag hoti hai, isliye model bhi key mein hona chahiye
-      const cacheKey = `${d.device_id}::${d.model}::${d.part_no}::${d.production_count}`;
+      // Har model aur specific session (start_time) ki production alag ho sakti hai
+      const cacheKey = `${d.device_id}::${d.model}::${d.part_no}::${d.production_count}::${d.start_time}`;
 
       // 🔹 Get last state (cache → DB fallback)
       let lastState = lastStateCache.get(cacheKey);
