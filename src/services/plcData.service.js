@@ -629,7 +629,11 @@ export const getPlcListingService = async (filters = {}) => {
   const norm = (value) => String(value ?? 'Unknown').trim().toLowerCase()
   const getDeviceId = (row) => row?.device_id || 'Unknown'
   const toTs = (row) => {
-    const dt = new Date(row?.created_at)
+    // Pick the "latest" PLC state using the best available timestamp.
+    // `created_at` sometimes lags/doesn't exist consistently, so use `timestamp` primarily.
+    const tsSource =
+      row?.timestamp ?? row?.start_time ?? row?.stop_time ?? row?.created_at
+    const dt = new Date(tsSource)
     const ts = dt.getTime()
     return Number.isFinite(ts) ? ts : 0
   }
@@ -1447,70 +1451,127 @@ export const getPlcDowntimeByErrorService = async (filters = {}) => {
 }
 
 export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
+  // This card should show "how many errors" per ERROR_STATUS (NOT downtime minutes),
+  // and it must align with the same error-count logic used in the dashboard summary.
   const { startDate, endDate, companyName, plantName, deviceId, model } = filters
 
-  const errorStatusExpr = `
-    COALESCE(
-      JSON_VALUE(extra_data, '$.ERROR_STATUS'),
-      JSON_VALUE(extra_data, '$.error_status'),
-      JSON_VALUE(extra_data, '$.parameters.ERROR_STATUS'),
-      JSON_VALUE(extra_data, '$.parameters.error_status')
-    )
-  `
-
-  let whereClause = `
-    WHERE stop_time IS NOT NULL 
-      AND ${errorStatusExpr} IS NOT NULL 
-      AND LTRIM(RTRIM(${errorStatusExpr})) <> ''
-      AND LOWER(LTRIM(RTRIM(${errorStatusExpr}))) <> 'ok'
-  `
-  const replacements = {}
-
+  const where = {}
   if (startDate && endDate) {
-    whereClause += ' AND start_time BETWEEN :startDate AND :endDate'
-    replacements.startDate = startDate
-    replacements.endDate = endDate
+    // UI date range is treated as "created_at" range across PLC dashboards.
+    where.created_at = { [Op.between]: [startDate, endDate] }
+  } else if (startDate) {
+    where.created_at = { [Op.gte]: startDate }
+  } else if (endDate) {
+    where.created_at = { [Op.lte]: endDate }
   }
 
-  if (companyName) {
-    whereClause += ' AND company_name LIKE :companyName'
-    replacements.companyName = `%${companyName}%`
+  if (companyName) where.company_name = { [Op.like]: `%${companyName}%` }
+  if (plantName) where.plant_name = { [Op.like]: `%${plantName}%` }
+  if (deviceId) where.device_id = { [Op.like]: `%${deviceId}%` }
+  if (model) where.model = { [Op.like]: `%${model}%` }
+
+  const toPlain = (row) => (row?.toJSON ? row.toJSON() : row)
+
+  const parseMaybeJson = (value) => {
+    if (!value) return null
+    if (typeof value === 'object') return value
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value)
+      } catch (_) {
+        return null
+      }
+    }
+    return null
   }
 
-  if (plantName) {
-    whereClause += ' AND plant_name LIKE :plantName'
-    replacements.plantName = `%${plantName}%`
+  const getModel = (row) => {
+    const machine = row?.machine
+    const product = row?.product
+    return row?.model ?? machine?.model ?? product?.model ?? 'Unknown'
   }
 
-  if (deviceId) {
-    whereClause += ' AND device_id LIKE :deviceId'
-    replacements.deviceId = `%${deviceId}%`
+  const getErrorStatus = (plainRow) => {
+    const raw =
+      plainRow?.parameters?.ERROR_STATUS ??
+      plainRow?.parameters?.error_status ??
+      plainRow?.ERROR_STATUS ??
+      plainRow?.error_status
+    return String(raw ?? '').trim().toLowerCase()
   }
 
-  if (model) {
-    whereClause += ' AND model LIKE :model'
-    replacements.model = `%${model}%`
+  const getBarcodeId = (plainRow) => {
+    const rawBarcodeDetails = plainRow?.Barcode_details
+    const barcodeDetails = parseMaybeJson(rawBarcodeDetails)
+    if (!barcodeDetails || typeof barcodeDetails !== 'object') return null
+
+    const id =
+      barcodeDetails?.BarcodeID ??
+      barcodeDetails?.BarcodeId ??
+      barcodeDetails?.barcode_id ??
+      barcodeDetails?.BarcodeTag ??
+      null
+
+    const s = id == null ? '' : String(id).trim()
+    return s ? s : null
   }
 
-  const query = `
-    SELECT 
-      UPPER(LTRIM(RTRIM(${errorStatusExpr}))) AS error_status, 
-      SUM(DATEDIFF(MINUTE, start_time, stop_time)) AS total_downtime 
-    FROM plc_data 
-    ${whereClause}
-    GROUP BY UPPER(LTRIM(RTRIM(${errorStatusExpr}))) 
-    HAVING SUM(DATEDIFF(MINUTE, start_time, stop_time)) > 0
-    ORDER BY total_downtime DESC;
-  `
+  const modelSel =
+    model != null && String(model).trim() !== ''
+      ? String(model).trim().toLowerCase()
+      : null
 
-  const results = await sequelize.query(query, {
-    replacements,
-    type: Sequelize.QueryTypes.SELECT,
-    raw: true,
+  // Fetch ordered like `getPlcListingService` so our "latest barcode per id"
+  // matches the dashboard summary's logic.
+  const rows = await PlcDataModel.findAll({
+    where,
+    order: [['timestamp', 'ASC']],
   })
 
-  return results.map((r) => ({
-    error_status: r.error_status,
-    total_downtime: r.total_downtime,
-  }))
+  await attachProductToPlcData(rows)
+
+  const latestBarcodeById = new Map()
+  for (const row of rows) {
+    const plainRow = toPlain(row)
+    const barcodeId = getBarcodeId(plainRow)
+    if (!barcodeId) continue
+
+    if (modelSel) {
+      const m = String(getModel(plainRow)).trim().toLowerCase()
+      if (m !== modelSel) continue
+    }
+
+    if (!latestBarcodeById.has(barcodeId)) {
+      latestBarcodeById.set(barcodeId, plainRow)
+    }
+  }
+
+  const countsByStatus = new Map() // ERROR_STATUS -> count
+  const modelsByStatus = new Map() // ERROR_STATUS -> Map(model -> count)
+
+  for (const latestRow of latestBarcodeById.values()) {
+    const status = getErrorStatus(latestRow)
+    if (!status || status === 'ok') continue
+
+    const error_status = status.toUpperCase()
+    countsByStatus.set(error_status, (countsByStatus.get(error_status) || 0) + 1)
+
+    const modelVal = String(getModel(latestRow) ?? 'Unknown').trim() || 'Unknown'
+    if (!modelsByStatus.has(error_status)) modelsByStatus.set(error_status, new Map())
+    const mm = modelsByStatus.get(error_status)
+    mm.set(modelVal, (mm.get(modelVal) || 0) + 1)
+  }
+
+  const results = Array.from(countsByStatus.entries()).map(([error_status, total_errors]) => {
+    const modelsMap = modelsByStatus.get(error_status) || new Map()
+    const top_models = Array.from(modelsMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([m, c]) => ({ model: m, count: c }))
+
+    return { error_status, total_errors, top_models }
+  })
+
+  results.sort((a, b) => b.total_errors - a.total_errors)
+  return results
 }

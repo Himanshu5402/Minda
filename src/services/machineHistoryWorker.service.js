@@ -174,7 +174,7 @@ async function processMachineHistory() {
       //
       // Kyun?
       // Har model aur specific session (start_time) ki production alag ho sakti hai
-      const cacheKey = `${d.device_id}::${d.model}::${d.part_no}::${d.production_count}::${d.start_time}`;
+      const cacheKey = `${d.device_id}::${d.model}::${d.part_no}::${d.production_count}`;
 
       // 🔹 Get last state (cache → DB fallback)
       let lastState = lastStateCache.get(cacheKey);
