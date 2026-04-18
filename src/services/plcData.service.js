@@ -8,21 +8,39 @@ import { sequelize } from '../sequelize.js'
 /** Attach product name (from plc_products) to plc data by device_id = machine_name */
 async function attachProductToPlcData(plcDataOrList) {
   const list = Array.isArray(plcDataOrList) ? plcDataOrList : [plcDataOrList]
+  if (list.length === 0) return plcDataOrList
+
+  // Revert to fetch all products to avoid missing any due to filter mismatches (trim/case)
+  // Products table is typically small, so this is safer and doesn't hurt performance.
   const products = await PlcProductModel.findAll({})
+
   const productNameByMachine = {}
   products.forEach((p) => {
-    if (p.machine_name && p.machine_name.trim()) {
+    const mName = p.machine_name?.trim()?.toLowerCase()
+    if (mName) {
       const name =
-        p.material_description || p.part_no || p.model_code || p.material_code || p.machine_name
-      productNameByMachine[p.machine_name.trim()] = name
+        p.product_name ||
+        p.material_description ||
+        p.part_no ||
+        p.model_code ||
+        p.material_code ||
+        p.machine_name
+      productNameByMachine[mName] = name
     }
   })
+
   list.forEach((item) => {
-    const product =
-      item.device_id && item.device_id.trim()
-        ? productNameByMachine[item.device_id.trim()] || null
-        : null
-    item.setDataValue('product', product)
+    const dId = item.device_id?.trim()?.toLowerCase()
+    const product = dId ? productNameByMachine[dId] || null : null
+
+    // Update existing product if found, or keep original if not
+    if (product) {
+      if (typeof item.setDataValue === 'function') {
+        item.setDataValue('product', product)
+      } else {
+        item.product = product
+      }
+    }
   })
   return plcDataOrList
 }
@@ -305,6 +323,64 @@ export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
   return plcDataList
 }
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: Map raw DB row + extra_data → what toJSON() would return
+// ─────────────────────────────────────────────────────────────────────────────
+function mapRawToPlain(row) {
+  let extra = row.extra_data || {}
+  if (typeof extra === 'string') {
+    try {
+      extra = JSON.parse(extra)
+    } catch (_) {
+      extra = {}
+    }
+  }
+
+  const parameters = {}
+  for (const [key, value] of Object.entries(extra)) {
+    if (key === 'product' || key === 'PRODUCTION_COUNT' || key === 'Barcode_details') continue
+    if (value !== null && typeof value !== 'object') {
+      parameters[key] = value
+    }
+  }
+
+  const PARAMS_MAP = {
+    latch_force: 'LATCH_FORCE',
+    claw_force: 'CLAW_FORCE',
+    safety_lever: 'SAFETY_LEVER',
+    claw_lever: 'CLAW_LEVER',
+    stroke: 'STROKE',
+    alarm: 'ALARM',
+  }
+  for (const [dbCol, paramKey] of Object.entries(PARAMS_MAP)) {
+    if (row[dbCol] !== undefined && row[dbCol] !== null) {
+      parameters[paramKey] = row[dbCol]
+    }
+  }
+
+  const product = row.product ?? extra.product ?? null
+  const Barcode_details = extra.Barcode_details ?? null
+
+  return {
+    _id: row._id,
+    companyname: row.company_name,
+    plantname: row.plant_name,
+    linenumber: row.line_number,
+    device_id: row.device_id,
+    timestamp: row.timestamp,
+    Start_time: row.start_time,
+    Stop_time: row.stop_time,
+    Status: row.status,
+    product,
+    production_count: row.production_count ?? extra.PRODUCTION_COUNT ?? null,
+    machine: row.model ? { model: row.model } : {},
+    parameters,
+    Barcode_details,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helper: map a raw DB row → clean report object
 // (same field extraction that was previously in the controller)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -336,59 +412,64 @@ function mapRowToReport(json) {
 
   // ── product ──
   let product = json.product
-  if (typeof product === 'string') {
+  if (typeof product === 'string' && (product.startsWith('{') || product.startsWith('['))) {
     try {
-      product = JSON.parse(product)
+      const parsed = JSON.parse(product)
+      if (parsed && typeof parsed === 'object') product = parsed
     } catch (_) {
-      product = null
+      // Keep as string if parsing fails
     }
   }
+
+  const finalProduct =
+    (product &&
+      typeof product === 'object' &&
+      (product.material_code || product.part_no || product.model || product.product_name)) ||
+    (typeof product === 'string' ? product : null) ||
+    null
 
   return {
     Company: json.companyname ?? null,
     Plant: json.plantname ?? null,
-    Product:
-      (product &&
-        typeof product === 'object' &&
-        (product.material_code || product.part_no || product.model)) ||
-      (typeof product === 'string' ? product : null) ||
-      null,
+    Product: finalProduct,
+    ProductionCount: json.production_count ?? json.PRODUCTION_COUNT ?? null,
     Model:
       (product && typeof product === 'object' && product.model) ||
       (json.machine && json.machine.model) ||
       json.model ||
       null,
-    Shift: flatParams.SHIFT || flatParams.Shift || flatParams.shift || null,
+    Shift: json.parameters?.SHIFT || json.parameters?.Shift || json.parameters?.shift || null,
     Operator:
-      flatParams.Operatorname ||
-      flatParams.OPERATORNAME ||
-      flatParams.OPERATOR ||
-      flatParams.operator ||
+      json.parameters?.Operatorname ||
+      json.parameters?.OPERATORNAME ||
+      json.parameters?.OPERATOR ||
+      json.parameters?.operator ||
       null,
     Date: json.timestamp || null,
     LineNumber: json.linenumber ?? null,
-    LineName: flatParams.linename || flatParams.line_name || null,
-    BarcodeTag: barcode.BarcodeID || null,
-    BarcodeStatus: barcode.BarcodeStatus || null,
-    BarcodeDateTime: barcode.BarcodeDateTime || null,
-    Rod: flatParams.ROD || flatParams.rod || null,
-    Striker: flatParams.STRIKER || flatParams.striker || null,
-    Error:
-      flatParams.ERROR_STATUS ||
-      flatParams.ERROR_CODE ||
-      flatParams.error_status ||
-      flatParams.error_code ||
+    LineName: json.parameters?.linename || json.parameters?.line_name || null,
+    BarcodeTag:
+      (json.Barcode_details &&
+        (json.Barcode_details.BarcodeID || json.Barcode_details.BarcodeTag)) ||
       null,
-    ProductionCount:
-      json.production_count ?? flatParams.PRODUCTION_COUNT ?? flatParams.production_count ?? null,
+    BarcodeStatus: json.Barcode_details?.BarcodeStatus || null,
+    BarcodeDateTime: json.Barcode_details?.BarcodeDateTime || null,
+    Rod: json.parameters?.ROD || json.parameters?.rod || null,
+    Striker: json.parameters?.STRIKER || json.parameters?.striker || null,
+    Error:
+      json.parameters?.ERROR_STATUS ||
+      json.parameters?.ERROR_CODE ||
+      json.parameters?.error_status ||
+      json.parameters?.error_code ||
+      null,
     // CalculatedProduction is derived here so the frontend never has to
     CalculatedProduction:
-      String(flatParams.ERROR_STATUS || flatParams.error_status || '')
+      String(json.parameters?.ERROR_STATUS || json.parameters?.error_status || '')
         .trim()
         .toLowerCase() === 'ok'
         ? 1
         : 0,
-    parameters: flatParams,
+    parameters: json.parameters || {},
     timestamp: json.timestamp || null,
   }
 }
@@ -404,9 +485,10 @@ function buildDbWhere(filters, Op) {
   if (filters.device_id) where.device_id = { [Op.like]: `%${filters.device_id}%` }
   if (filters.company_name) where.company_name = filters.company_name // ← exact match
   if (filters.plant_name) where.plant_name = filters.plant_name // ← exact match
+  if (filters.model) where.model = filters.model
 
-  // duration/date filters same as before
-  const { duration, startDate, endDate, startTime, endTime } = filters
+  // duration/date filters
+  const { duration, startDate, endDate, startTime, endTime, timestampStart, timestampEnd } = filters
 
   if (duration === 'today') {
     const start = new Date()
@@ -420,14 +502,26 @@ function buildDbWhere(filters, Op) {
   } else if (duration === 'month') {
     const now = new Date()
     where.timestamp = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) }
-  } else if (duration === 'custom') {
-    const start = startDate ? new Date(`${startDate}T${startTime || '00:00'}:00`) : null
-    const end = endDate ? new Date(`${endDate}T${endTime || '23:59'}:59`) : null
+  } else if (duration === 'custom' || (startDate && endDate)) {
+    // Handle both preset "custom" and direct ISO strings from frontend
+    const start = startDate
+      ? new Date(
+          String(startDate).includes('T') ? startDate : `${startDate}T${startTime || '00:00'}:00`,
+        )
+      : null
+    const end = endDate
+      ? new Date(String(endDate).includes('T') ? endDate : `${endDate}T${endTime || '23:59'}:59`)
+      : null
+
     if (start && end) where.timestamp = { [Op.between]: [start, end] }
     else if (start) where.timestamp = { [Op.gte]: start }
     else if (end) where.timestamp = { [Op.lte]: end }
-  } else if (filters.timestampStart && filters.timestampEnd) {
-    where.timestamp = { [Op.between]: [filters.timestampStart, filters.timestampEnd] }
+  } else if (timestampStart && timestampEnd) {
+    where.timestamp = { [Op.between]: [timestampStart, timestampEnd] }
+  } else if (startDate) {
+    where.timestamp = { [Op.gte]: new Date(startDate) }
+  } else if (endDate) {
+    where.timestamp = { [Op.lte]: new Date(endDate) }
   }
 
   return where
@@ -436,39 +530,70 @@ function buildDbWhere(filters, Op) {
 // Main service
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAllPlcReport = async (filters = {}, pagination = {}) => {
-    // 1️⃣  Fetch from DB (latest first) so dedup keeps the latest record per barcode
+  // 1️⃣  Fetch from DB with limited columns and raw=true for maximum speed
   const where = buildDbWhere(filters, Op)
+  // Pushing model filter to SQL if present
+  if (filters.model) where.model = filters.model
 
   const rawRows = await PlcDataModel.findAll({
     where,
+    attributes: [
+      '_id',
+      'company_name',
+      'plant_name',
+      'line_number',
+      'device_id',
+      'timestamp',
+      'start_time',
+      'stop_time',
+      'status',
+      'model',
+      'production_count',
+      'extra_data',
+    ],
     order: [['timestamp', 'ASC']],
+    raw: true,
   })
 
-  await attachProductToPlcData(rawRows)
-
-  // 2️⃣  Map to clean report objects
-  const mapped = rawRows.map((r) => mapRowToReport(r.toJSON()))
-
-  // 3️⃣  Deduplicate by BarcodeTag — keep FIRST (latest) occurrence
+  // 2️⃣  Process and Deduplicate by BarcodeTag in one pass
   const barcodeMap = new Map()
-  for (const row of mapped) {
-    if (row.BarcodeTag && !barcodeMap.has(row.BarcodeTag)) {
-      barcodeMap.set(row.BarcodeTag, row)
+
+  const parseJson = (val) => {
+    if (!val) return null
+    if (typeof val === 'object') return val
+    try {
+      return JSON.parse(val)
+    } catch (_) {
+      return null
     }
   }
-  let deduped = Array.from(barcodeMap.values())
 
-  // 4️⃣  In-memory filters (values live inside JSON blobs, can't use SQL)
-  if (filters.model) {
-    deduped = deduped.filter(
-      (r) => String(r.Model ?? '').trim() === String(filters.model).trim(), // ← exact match
-    )
+  for (const row of rawRows) {
+    const extra = parseJson(row.extra_data) || {}
+    const barcodeDetails = parseJson(extra.Barcode_details) || {}
+
+    const barcodeTag =
+      barcodeDetails.BarcodeID ??
+      barcodeDetails.BarcodeId ??
+      barcodeDetails.barcode_id ??
+      barcodeDetails.BarcodeTag ??
+      null
+
+    if (barcodeTag && !barcodeMap.has(barcodeTag)) {
+      barcodeMap.set(barcodeTag, mapRawToPlain(row))
+    }
   }
 
+  let deduped = Array.from(barcodeMap.values())
+
+  // 3️⃣  In-memory filters (status only, model is in SQL)
   if (filters.status) {
     const sel = filters.status.trim().toLowerCase()
     deduped = deduped.filter((r) => {
-      const err = String(r.Error ?? '')
+      const extra = r.parameters || {} // we mapped extra_data to parameters above
+      const err = String(
+        extra.ERROR_STATUS ?? extra.error_status ?? extra.parameters?.ERROR_STATUS ?? 'ok',
+      )
         .trim()
         .toLowerCase()
       if (sel === 'ok') return err === 'ok'
@@ -477,62 +602,57 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     })
   }
 
-  // 5️⃣  Sort DESC — latest on top (for display)
-  deduped.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  // 4️⃣  Attach products only to the final deduplicated set
+  await attachProductToPlcData(deduped)
 
-  const total = deduped.length
+  // 5️⃣  Map to clean report objects
+  const mapped = deduped.map((r) => mapRowToReport(r))
 
-  // 6️⃣  Summary stats (computed once, on full filtered set)
-  const uniqueProducts = new Set(deduped.map((r) => r.Product).filter(Boolean)).size
-  const barcodeOkCount = deduped.filter(
-    (r) =>
-      String(r.Error ?? '')
-        .trim()
-        .toLowerCase() === 'ok',
-  ).length
-  const barcodeNgCount = total - barcodeOkCount
+  // 6️⃣  Sort DESC — latest on top (for display)
+  mapped.sort((a, b) => new Date(b.Date || b.timestamp) - new Date(a.Date || a.timestamp))
 
-  // Total production: max ProductionCount per Plant+Model combination, then sum
+  const total = mapped.length
+
+  // 7️⃣  Summary stats (one pass over the final mapped set)
+  const uniqueProducts = new Set()
+  let barcodeOkCount = 0
   const plantModelMax = new Map()
-  for (const row of deduped) {
-    const key = `${row.Plant}__${row.Model}`
-    const cur = plantModelMax.get(key)?.ProductionCount ?? -1
-    if ((row.ProductionCount ?? 0) > cur) plantModelMax.set(key, row)
-  }
-  let totalProduction = 0
-  plantModelMax.forEach((r) => {
-    totalProduction += r.ProductionCount || 0
-  })
-
-  // Per-product summary for the summary modal
   const productSummaryMap = new Map()
-  for (const row of deduped) {
-    const product = row.Product
-    if (!product) continue
 
-    const rowTime = new Date(row.timestamp)
-    if (!productSummaryMap.has(product)) {
-      productSummaryMap.set(product, {
-        latestRow: row,
-        latestTime: rowTime,
-        barcodeOk: 0,
-        barcodeNg: 0,
-      })
-    } else {
-      const e = productSummaryMap.get(product)
-      if (rowTime > e.latestTime) {
-        e.latestRow = row
-        e.latestTime = rowTime
-      }
+  for (const row of mapped) {
+    if (row.Product) uniqueProducts.add(row.Product)
+
+    const isOk =
+      String(row.Error ?? '')
+        .trim()
+        .toLowerCase() === 'ok'
+    if (isOk) barcodeOkCount++
+
+    const pmKey = `${row.Plant}__${row.Model}`
+    const existingPM = plantModelMax.get(pmKey)
+    if (!existingPM || (row.ProductionCount ?? 0) > existingPM.ProductionCount) {
+      plantModelMax.set(pmKey, row)
     }
 
-    const err = String(row.Error ?? '')
-      .trim()
-      .toLowerCase()
-    const entry = productSummaryMap.get(product)
-    if (err === 'ok') entry.barcodeOk += 1
-    else entry.barcodeNg += 1
+    const product = row.Product
+    if (product) {
+      const rowTime = new Date(row.timestamp || row.Date)
+      let s = productSummaryMap.get(product)
+      if (!s) {
+        s = { latestRow: row, latestTime: rowTime, barcodeOk: 0, barcodeNg: 0 }
+        productSummaryMap.set(product, s)
+      } else if (rowTime > s.latestTime) {
+        s.latestRow = row
+        s.latestTime = rowTime
+      }
+      if (isOk) s.barcodeOk++
+      else s.barcodeNg++
+    }
   }
+
+  const barcodeNgCount = total - barcodeOkCount
+  let totalProduction = 0
+  plantModelMax.forEach((r) => (totalProduction += r.ProductionCount || 0))
 
   const productSummaries = Array.from(productSummaryMap.entries()).map(([product, s]) => ({
     product,
@@ -544,11 +664,11 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     model: s.latestRow?.Model || '-',
   }))
 
-  // 7️⃣  Paginate
+  // 8️⃣  Paginate
   const page = Math.max(Number(pagination.page) || 1, 1)
   const limit = Math.min(Number(pagination.limit) || 10, 500)
   const offset = (page - 1) * limit
-  const pageData = deduped.slice(offset, offset + limit)
+  const pageData = mapped.slice(offset, offset + limit)
 
   return {
     data: pageData,
@@ -557,7 +677,7 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     limit,
     totalPages: Math.ceil(total / limit) || 1,
     summary: {
-      uniqueProducts,
+      uniqueProducts: uniqueProducts.size,
       barcodeOkCount,
       barcodeNgCount,
       totalProduction,
@@ -594,49 +714,7 @@ export const getPlcReportOptionsService = async () => {
 export const getPlcListingService = async (filters = {}) => {
   const where = buildDbWhere(filters, Op)
 
-  if (filters.company_name) where.company_name = filters.company_name
-  if (filters.plant_name) where.plant_name = filters.plant_name
-  if (filters.device_id) {
-    where.device_id = { [Op.like]: `%${filters.device_id}%` }
-  }
-
-  const data = await PlcDataModel.findAll({
-    where,
-    order: [['timestamp', 'ASC']],
-  })
-
-  await attachProductToPlcData(data)
-
-  const toPlain = (row) => (row?.toJSON ? row.toJSON() : row)
-  const asObject = (value) => {
-    if (!value) return null
-    if (typeof value === 'object') return value
-    if (typeof value === 'string') {
-      try {
-        const parsed = JSON.parse(value)
-        return parsed && typeof parsed === 'object' ? parsed : null
-      } catch (_) {
-        return null
-      }
-    }
-    return null
-  }
-  const getModel = (row) => {
-    const machine = asObject(row?.machine)
-    const product = asObject(row?.product)
-    return row?.model ?? machine?.model ?? product?.model ?? 'Unknown'
-  }
-  const norm = (value) => String(value ?? 'Unknown').trim().toLowerCase()
-  const getDeviceId = (row) => row?.device_id || 'Unknown'
-  const toTs = (row) => {
-    // Pick the "latest" PLC state using the best available timestamp.
-    // `created_at` sometimes lags/doesn't exist consistently, so use `timestamp` primarily.
-    const tsSource =
-      row?.timestamp ?? row?.start_time ?? row?.stop_time ?? row?.created_at
-    const dt = new Date(tsSource)
-    const ts = dt.getTime()
-    return Number.isFinite(ts) ? ts : 0
-  }
+  // Helper to parse JSON safely
   const parseMaybeJson = (value) => {
     if (!value) return null
     if (typeof value === 'object') return value
@@ -650,13 +728,35 @@ export const getPlcListingService = async (filters = {}) => {
     return null
   }
 
+  const asObject = (value) => {
+    if (!value) return null
+    if (typeof value === 'object') return value
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        return parsed && typeof parsed === 'object' ? parsed : null
+      } catch (_) {
+        return null
+      }
+    }
+    return null
+  }
+
+  const getModel = (row) => {
+    const machine = asObject(row?.machine)
+    const product = asObject(row?.product)
+    return row?.model ?? machine?.model ?? product?.model ?? 'Unknown'
+  }
+
   const getErrorStatus = (plainRow) => {
     const raw =
       plainRow?.parameters?.ERROR_STATUS ??
       plainRow?.parameters?.error_status ??
       plainRow?.ERROR_STATUS ??
       plainRow?.error_status
-    return String(raw ?? '').trim().toLowerCase()
+    return String(raw ?? '')
+      .trim()
+      .toLowerCase()
   }
 
   const getBarcodeId = (plainRow) => {
@@ -675,74 +775,134 @@ export const getPlcListingService = async (filters = {}) => {
     return s ? s : null
   }
 
+  const norm = (value) =>
+    String(value ?? 'Unknown')
+      .trim()
+      .toLowerCase()
+
   const modelSel =
     filters.model != null && String(filters.model).trim() !== ''
       ? String(filters.model).trim().toLowerCase()
       : null
 
-  // Latest row per device (for UI)
-  const latestRowByDevice = new Map()
-  for (const row of data) {
-    const deviceId = norm(getDeviceId(row))
-    const plainRow = toPlain(row)
-    const rowTs = toTs(row)
-    const existing = latestRowByDevice.get(deviceId)
-    if (!existing || rowTs > existing.ts) {
-      latestRowByDevice.set(deviceId, { row: plainRow, ts: rowTs })
-    }
-  }
+  /**
+   * OPTIMIZATION:
+   * Instead of fetching ALL records and processing in JS, we use two targeted fetches.
+   * 1. Latest record per device (using a subquery/window function if possible, or targeted findAll)
+   * 2. Aggregated barcode stats
+   */
 
-  // Latest row per BarcodeID (created_at DESC via first-seen in ordered data),
-  // same direction as report card flow.
+  // 1. Fetch only the latest record for each device matching the filters
+  // We use a subquery with ROW_NUMBER() for maximum performance in MSSQL
+  const whereQuery = sequelize.getQueryInterface().queryGenerator.whereQuery(where)
+  const whereSql = whereQuery ? whereQuery.replace(/^WHERE\s+/i, '') : '1=1'
+
+  const latestRows = await PlcDataModel.findAll({
+    where: {
+      ...where,
+      _id: {
+        [Op.in]: Sequelize.literal(`(
+            SELECT _id FROM (
+              SELECT _id, ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY timestamp DESC) as rn
+              FROM plc_data
+              WHERE ${whereSql}
+            ) t WHERE rn = 1
+          )`),
+      },
+    },
+    raw: true,
+  })
+
+  await attachProductToPlcData(latestRows)
+  const latestRowByDeviceList = latestRows.map((r) => mapRawToPlain(r))
+
+  // 2. Fetch barcode data for production count and summary
+  // To keep logic consistent with "first-seen in ASC order", we need all relevant barcode records.
+  // But we only need a few columns, which is much faster than fetching everything.
+  const barcodeData = await PlcDataModel.findAll({
+    where,
+    attributes: ['device_id', 'timestamp', 'extra_data', 'model', 'production_count'],
+    order: [['timestamp', 'ASC']],
+    raw: true,
+  })
+
   const latestBarcodeById = new Map()
-  for (const row of data) {
-    const plainRow = toPlain(row)
-    const barcodeId = getBarcodeId(plainRow)
+  for (const plainRow of barcodeData) {
+    // In the DB, extra_data is JSON, but Sequelize might return it as object or string
+    let extra = plainRow.extra_data
+    if (typeof extra === 'string') {
+      try {
+        extra = JSON.parse(extra)
+      } catch (_) {
+        extra = {}
+      }
+    }
+
+    const barcodeDetails = parseMaybeJson(extra?.Barcode_details)
+    const barcodeId =
+      barcodeDetails?.BarcodeID ??
+      barcodeDetails?.BarcodeId ??
+      barcodeDetails?.barcode_id ??
+      barcodeDetails?.BarcodeTag ??
+      null
+
     if (!barcodeId) continue
-    if (modelSel && String(getModel(plainRow)).trim().toLowerCase() !== modelSel) {
+
+    // Model filtering logic (must match getModel logic)
+    const rowModel = plainRow.model ?? extra?.machine?.model ?? extra?.product?.model ?? 'Unknown'
+    if (modelSel && String(rowModel).trim().toLowerCase() !== modelSel) {
       continue
     }
 
-    if (!latestBarcodeById.has(barcodeId)) {
-      latestBarcodeById.set(barcodeId, plainRow)
+    const bId = String(barcodeId).trim()
+    if (!bId) continue
+
+    if (!latestBarcodeById.has(bId)) {
+      // Reconstruct what getErrorStatus expects
+      const errorStatus =
+        extra?.ERROR_STATUS ?? extra?.error_status ?? extra?.parameters?.ERROR_STATUS ?? null
+
+      latestBarcodeById.set(bId, {
+        device_id: plainRow.device_id,
+        errorStatus: String(errorStatus ?? '')
+          .trim()
+          .toLowerCase(),
+      })
     }
   }
 
-  // Per-device production count using latest barcode record flow.
+  // Per-device production count
   const barcodeOkSetByDevice = new Map()
-  for (const [barcodeId, latestRow] of latestBarcodeById.entries()) {
-    if (getErrorStatus(latestRow) === 'ok') {
-      const deviceId = norm(getDeviceId(latestRow))
-      if (!barcodeOkSetByDevice.has(deviceId)) {
-        barcodeOkSetByDevice.set(deviceId, new Set())
+  let totalProductionBarcodes = 0
+  let totalErrorBarcodes = 0
+
+  for (const [barcodeId, data] of latestBarcodeById.entries()) {
+    const isOk = data.errorStatus === 'ok'
+    if (isOk) {
+      totalProductionBarcodes += 1
+      const dId = norm(data.device_id)
+      if (!barcodeOkSetByDevice.has(dId)) {
+        barcodeOkSetByDevice.set(dId, new Set())
       }
-      barcodeOkSetByDevice.get(deviceId).add(barcodeId)
+      barcodeOkSetByDevice.get(dId).add(barcodeId)
+    } else {
+      totalErrorBarcodes += 1
     }
   }
 
-  let result = Array.from(latestRowByDevice.values()).map(({ row }) => ({
+  let result = latestRowByDeviceList.map((row) => ({
     ...row,
-    production_count:
-      barcodeOkSetByDevice.get(norm(row.device_id || 'Unknown'))?.size || 0,
+    production_count: barcodeOkSetByDevice.get(norm(row.device_id))?.size || 0,
   }))
 
+  // Apply final filters
   if (filters.status) {
     const sel = String(filters.status).toLowerCase()
-    result = result.filter(
-      (r) => String(r?.Status ?? r?.status ?? '').toLowerCase() === sel,
-    )
+    result = result.filter((r) => String(r?.Status ?? r?.status ?? '').toLowerCase() === sel)
   }
 
   if (modelSel) {
     result = result.filter((r) => String(getModel(r)).trim().toLowerCase() === modelSel)
-  }
-
-  let totalProductionBarcodes = 0
-  let totalErrorBarcodes = 0
-  for (const latestRow of latestBarcodeById.values()) {
-    const status = getErrorStatus(latestRow)
-    if (status === 'ok') totalProductionBarcodes += 1
-    else totalErrorBarcodes += 1
   }
 
   return {
@@ -1497,7 +1657,9 @@ export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
       plainRow?.parameters?.error_status ??
       plainRow?.ERROR_STATUS ??
       plainRow?.error_status
-    return String(raw ?? '').trim().toLowerCase()
+    return String(raw ?? '')
+      .trim()
+      .toLowerCase()
   }
 
   const getBarcodeId = (plainRow) => {
@@ -1517,9 +1679,7 @@ export const getPlcDowntimeByErrorStatusService = async (filters = {}) => {
   }
 
   const modelSel =
-    model != null && String(model).trim() !== ''
-      ? String(model).trim().toLowerCase()
-      : null
+    model != null && String(model).trim() !== '' ? String(model).trim().toLowerCase() : null
 
   // Fetch ordered like `getPlcListingService` so our "latest barcode per id"
   // matches the dashboard summary's logic.
