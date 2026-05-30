@@ -10,9 +10,23 @@ async function attachProductToPlcData(plcDataOrList) {
   const list = Array.isArray(plcDataOrList) ? plcDataOrList : [plcDataOrList]
   if (list.length === 0) return plcDataOrList
 
-  // Revert to fetch all products to avoid missing any due to filter mismatches (trim/case)
-  // Products table is typically small, so this is safer and doesn't hurt performance.
-  const products = await PlcProductModel.findAll({})
+  const machineNames = [
+    ...new Set(
+      list
+        .map((item) => item.device_id?.trim()?.toLowerCase())
+        .filter(Boolean),
+    ),
+  ]
+
+  if (machineNames.length === 0) return plcDataOrList
+
+  const products = await PlcProductModel.findAll({
+    where: Sequelize.where(
+      Sequelize.fn('LOWER', Sequelize.col('machine_name')),
+      { [Op.in]: machineNames },
+    ),
+    raw: true,
+  })
 
   const productNameByMachine = {}
   products.forEach((p) => {
@@ -33,7 +47,6 @@ async function attachProductToPlcData(plcDataOrList) {
     const dId = item.device_id?.trim()?.toLowerCase()
     const product = dId ? productNameByMachine[dId] || null : null
 
-    // Update existing product if found, or keep original if not
     if (product) {
       if (typeof item.setDataValue === 'function') {
         item.setDataValue('product', product)
@@ -42,6 +55,7 @@ async function attachProductToPlcData(plcDataOrList) {
       }
     }
   })
+
   return plcDataOrList
 }
 
@@ -81,6 +95,29 @@ const KNOWN_MAP = {
 }
 
 const DATE_FIELDS = ['timestamp', 'start_time', 'stop_time']
+
+const RAW_DATA_ATTRIBUTES = [
+  '_id',
+  'company_name',
+  'plant_name',
+  'line_number',
+  'device_id',
+  'timestamp',
+  'start_time',
+  'stop_time',
+  'status',
+  'latch_force',
+  'claw_force',
+  'safety_lever',
+  'claw_lever',
+  'stroke',
+  'production_count',
+  'model',
+  'alarm',
+  'extra_data',
+  'created_at',
+  'updated_at',
+]
 
 /** Flatten nested payload (parameters, machine) into single object */
 function flattenPayload(data) {
@@ -308,20 +345,83 @@ export const getAllPlcDataService = async (filters = {}, pagination = {}) => {
     }
   }
 
-  // const page = Math.max(pagination.page || 1, 1)
-  // const limit = Math.min(pagination.limit || 10, 5000)
-  // const offset = (page - 1) * limit
-
-  const plcDataList = await PlcDataModel.findAll({
+  const query = {
     where,
     order: [['created_at', 'DESC']],
-    // limit,
-    // offset,
-  })
+    raw: true,
+  }
 
+  if (pagination.page || pagination.limit) {
+    const page = Math.max(Number(pagination.page) || 1, 1)
+    const limit = Math.min(Number(pagination.limit) || 5000, 5000)
+    query.limit = limit
+    query.offset = (page - 1) * limit
+  }
+
+  const plcDataList = await PlcDataModel.findAll(query)
   await attachProductToPlcData(plcDataList)
   return plcDataList
 }
+
+export const streamAllPlcDataService = async (filters = {}, options = {}, onBatch) => {
+  const batchSize = Math.min(Math.max(Number(options.batchSize) || 5000, 1000), 10000)
+  const where = buildDbWhere(filters, Op)
+
+  if (filters.status) {
+    where.status = { [Op.like]: `%${filters.status}%` }
+  }
+
+  const order = [['created_at', 'DESC'], ['_id', 'DESC']]
+  let lastKey = null
+  let totalRows = 0
+
+  while (true) {
+    const batchWhere = lastKey
+      ? {
+          [Op.and]: [
+            where,
+            {
+              [Op.or]: [
+                { created_at: { [Op.lt]: lastKey.created_at } },
+                {
+                  created_at: lastKey.created_at,
+                  _id: { [Op.lt]: lastKey._id },
+                },
+              ],
+            },
+          ],
+        }
+      : where
+
+    const rows = await PlcDataModel.findAll({
+      where: batchWhere,
+      attributes: RAW_DATA_ATTRIBUTES,
+      order,
+      limit: batchSize,
+      raw: true,
+    })
+
+    if (!rows || rows.length === 0) break
+
+    if (options.attachProduct !== false) {
+      await attachProductToPlcData(rows)
+    }
+
+    await onBatch(rows)
+    totalRows += rows.length
+
+    if (rows.length < batchSize) break
+
+    const lastRow = rows[rows.length - 1]
+    lastKey = {
+      created_at: lastRow.created_at,
+      _id: lastRow._id,
+    }
+  }
+
+  return totalRows
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: Map raw DB row + extra_data → what toJSON() would return
 // ─────────────────────────────────────────────────────────────────────────────
@@ -530,90 +630,80 @@ function buildDbWhere(filters, Op) {
 // Main service
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAllPlcReport = async (filters = {}, pagination = {}) => {
-  // 1️⃣  Fetch from DB with limited columns and raw=true for maximum speed
+  const page = Math.max(Number(pagination.page) || 1, 1)
+  const limit = Math.min(Number(pagination.limit) || 10, 500)
+  const offset = (page - 1) * limit
+
   const where = buildDbWhere(filters, Op)
-  // Pushing model filter to SQL if present
   if (filters.model) where.model = filters.model
 
-  const rawRows = await PlcDataModel.findAll({
-    where,
-    attributes: [
-      '_id',
-      'company_name',
-      'plant_name',
-      'line_number',
-      'device_id',
-      'timestamp',
-      'start_time',
-      'stop_time',
-      'status',
-      'model',
-      'production_count',
-      'extra_data',
-    ],
-    order: [['timestamp', 'ASC']],
-    raw: true,
+  const whereQuery = sequelize.getQueryInterface().queryGenerator.whereQuery(where)
+  const whereSql = whereQuery ? whereQuery.replace(/^WHERE\s+/i, '') : '1=1'
+  const statusFilter = filters.status ? String(filters.status).trim().toLowerCase() : null
+  const statusCondition = statusFilter === 'ok' || statusFilter === 'error'
+    ? 'AND barcode_status = :statusFilter'
+    : ''
+
+  const allRowsQuery = `
+    WITH Filtered AS (
+      SELECT
+        _id,
+        company_name,
+        plant_name,
+        line_number,
+        device_id,
+        timestamp,
+        start_time,
+        stop_time,
+        status,
+        model,
+        production_count,
+        extra_data,
+        COALESCE(
+          JSON_VALUE(extra_data, '$.Barcode_details.BarcodeID'),
+          JSON_VALUE(extra_data, '$.Barcode_details.BarcodeId'),
+          JSON_VALUE(extra_data, '$.Barcode_details.barcode_id'),
+          JSON_VALUE(extra_data, '$.Barcode_details.BarcodeTag')
+        ) AS barcode_tag,
+        LOWER(COALESCE(
+          NULLIF(JSON_VALUE(extra_data, '$.ERROR_STATUS'), ''),
+          NULLIF(JSON_VALUE(extra_data, '$.error_status'), ''),
+          NULLIF(JSON_VALUE(extra_data, '$.parameters.ERROR_STATUS'), ''),
+          NULLIF(JSON_VALUE(extra_data, '$.parameters.error_status'), ''),
+          'ok'
+        )) AS barcode_status
+      FROM plc_data
+      WHERE ${whereSql}
+    ),
+    Ranked AS (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY barcode_tag ORDER BY timestamp ASC) AS rn
+      FROM Filtered
+      WHERE barcode_tag IS NOT NULL
+      ${statusCondition}
+    ),
+    Final AS (
+      SELECT *
+      FROM Ranked
+      WHERE rn = 1
+    )
+    SELECT *
+    FROM Final
+    ORDER BY timestamp DESC;
+  `
+
+  const rawRows = await sequelize.query(allRowsQuery, {
+    replacements: { statusFilter },
+    type: Sequelize.QueryTypes.SELECT,
   })
 
-  // 2️⃣  Process and Deduplicate by BarcodeTag in one pass
-  const barcodeMap = new Map()
+  const deduped = rawRows.map((row) => mapRawToPlain(row))
 
-  const parseJson = (val) => {
-    if (!val) return null
-    if (typeof val === 'object') return val
-    try {
-      return JSON.parse(val)
-    } catch (_) {
-      return null
-    }
-  }
-
-  for (const row of rawRows) {
-    const extra = parseJson(row.extra_data) || {}
-    const barcodeDetails = parseJson(extra.Barcode_details) || {}
-
-    const barcodeTag =
-      barcodeDetails.BarcodeID ??
-      barcodeDetails.BarcodeId ??
-      barcodeDetails.barcode_id ??
-      barcodeDetails.BarcodeTag ??
-      null
-
-    if (barcodeTag && !barcodeMap.has(barcodeTag)) {
-      barcodeMap.set(barcodeTag, mapRawToPlain(row))
-    }
-  }
-
-  let deduped = Array.from(barcodeMap.values())
-
-  // 3️⃣  In-memory filters (status only, model is in SQL)
-  if (filters.status) {
-    const sel = filters.status.trim().toLowerCase()
-    deduped = deduped.filter((r) => {
-      const extra = r.parameters || {} // we mapped extra_data to parameters above
-      const err = String(
-        extra.ERROR_STATUS ?? extra.error_status ?? extra.parameters?.ERROR_STATUS ?? 'ok',
-      )
-        .trim()
-        .toLowerCase()
-      if (sel === 'ok') return err === 'ok'
-      if (sel === 'error') return err !== 'ok'
-      return true
-    })
-  }
-
-  // 4️⃣  Attach products only to the final deduplicated set
   await attachProductToPlcData(deduped)
 
-  // 5️⃣  Map to clean report objects
   const mapped = deduped.map((r) => mapRowToReport(r))
-
-  // 6️⃣  Sort DESC — latest on top (for display)
   mapped.sort((a, b) => new Date(b.Date || b.timestamp) - new Date(a.Date || a.timestamp))
 
   const total = mapped.length
-
-  // 7️⃣  Summary stats (one pass over the final mapped set)
   const uniqueProducts = new Set()
   let barcodeOkCount = 0
   const plantModelMax = new Map()
@@ -622,10 +712,7 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
   for (const row of mapped) {
     if (row.Product) uniqueProducts.add(row.Product)
 
-    const isOk =
-      String(row.Error ?? '')
-        .trim()
-        .toLowerCase() === 'ok'
+    const isOk = String(row.Error ?? '').trim().toLowerCase() === 'ok'
     if (isOk) barcodeOkCount++
 
     const pmKey = `${row.Plant}__${row.Model}`
@@ -664,10 +751,6 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     model: s.latestRow?.Model || '-',
   }))
 
-  // 8️⃣  Paginate
-  const page = Math.max(Number(pagination.page) || 1, 1)
-  const limit = Math.min(Number(pagination.limit) || 10, 500)
-  const offset = (page - 1) * limit
   const pageData = mapped.slice(offset, offset + limit)
 
   return {
@@ -685,23 +768,123 @@ export const getAllPlcReport = async (filters = {}, pagination = {}) => {
     productSummaries,
   }
 }
+
+export const streamPlcReportService = async (filters = {}, options = {}, onBatch) => {
+  const batchSize = Math.min(Math.max(Number(options.batchSize) || 1000, 500), 10000)
+  const where = buildDbWhere(filters, Op)
+  if (filters.model) where.model = filters.model
+
+  const whereQuery = sequelize.getQueryInterface().queryGenerator.whereQuery(where)
+  const whereSql = whereQuery ? whereQuery.replace(/^WHERE\s+/i, '') : '1=1'
+  const statusFilter = filters.status ? String(filters.status).trim().toLowerCase() : null
+  const statusCondition = statusFilter === 'ok' || statusFilter === 'error'
+    ? 'AND barcode_status = :statusFilter'
+    : ''
+
+  let lastTimestamp = null
+  let lastId = null
+  let totalRows = 0
+
+  while (true) {
+    const query = `
+      WITH Filtered AS (
+        SELECT
+          _id,
+          company_name,
+          plant_name,
+          line_number,
+          device_id,
+          timestamp,
+          start_time,
+          stop_time,
+          status,
+          model,
+          production_count,
+          extra_data,
+          COALESCE(
+            JSON_VALUE(extra_data, '$.Barcode_details.BarcodeID'),
+            JSON_VALUE(extra_data, '$.Barcode_details.BarcodeId'),
+            JSON_VALUE(extra_data, '$.Barcode_details.barcode_id'),
+            JSON_VALUE(extra_data, '$.Barcode_details.BarcodeTag')
+          ) AS barcode_tag,
+          LOWER(COALESCE(
+            NULLIF(JSON_VALUE(extra_data, '$.ERROR_STATUS'), ''),
+            NULLIF(JSON_VALUE(extra_data, '$.error_status'), ''),
+            NULLIF(JSON_VALUE(extra_data, '$.parameters.ERROR_STATUS'), ''),
+            NULLIF(JSON_VALUE(extra_data, '$.parameters.error_status'), ''),
+            'ok'
+          )) AS barcode_status
+        FROM plc_data
+        WHERE ${whereSql}
+      ),
+      Ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY barcode_tag ORDER BY timestamp ASC) AS rn
+        FROM Filtered
+        WHERE barcode_tag IS NOT NULL
+        ${statusCondition}
+      ),
+      Final AS (
+        SELECT *
+        FROM Ranked
+        WHERE rn = 1
+      )
+      SELECT *
+      FROM Final
+      WHERE 1=1
+      ${lastTimestamp ? 'AND (timestamp < :lastTimestamp OR (timestamp = :lastTimestamp AND _id < :lastId))' : ''}
+      ORDER BY timestamp DESC, _id DESC
+      OFFSET 0 ROWS FETCH NEXT :batchSize ROWS ONLY;
+    `
+
+    const replacements = { statusFilter, batchSize }
+    if (lastTimestamp && lastId) {
+      replacements.lastTimestamp = lastTimestamp
+      replacements.lastId = lastId
+    }
+
+    const rows = await sequelize.query(query, {
+      replacements,
+      type: Sequelize.QueryTypes.SELECT,
+    })
+
+    if (!rows || rows.length === 0) break
+
+    const batch = rows.map((row) => mapRawToPlain(row))
+    await attachProductToPlcData(batch)
+    const mappedBatch = batch.map((r) => mapRowToReport(r))
+
+    await onBatch(mappedBatch)
+    totalRows += mappedBatch.length
+
+    if (rows.length < batchSize) break
+
+    const lastRow = rows[rows.length - 1]
+    lastTimestamp = lastRow.timestamp
+    lastId = lastRow._id
+  }
+
+  return totalRows
+}
+
 export const getPlcReportOptionsService = async () => {
-  const companies = await PlcDataModel.findAll({
-    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('company_name')), 'company_name']],
-    raw: true,
-  })
-  const plants = await PlcDataModel.findAll({
-    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('plant_name')), 'plant_name']],
-    raw: true,
-  })
-  const models = await PlcDataModel.findAll({
-    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('model')), 'model']],
-    raw: true,
-  })
-  const part_nos = await MachineHistoryModel.findAll({
-    attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('part_no')), 'part_no']],
-    raw: true,
-  })
+  const [companies, plants, models, part_nos] = await Promise.all([
+    PlcDataModel.findAll({
+      attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('company_name')), 'company_name']],
+      raw: true,
+    }),
+    PlcDataModel.findAll({
+      attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('plant_name')), 'plant_name']],
+      raw: true,
+    }),
+    PlcDataModel.findAll({
+      attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('model')), 'model']],
+      raw: true,
+    }),
+    MachineHistoryModel.findAll({
+      attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('part_no')), 'part_no']],
+      raw: true,
+    }),
+  ])
 
   return {
     companies: companies.map((c) => c.company_name).filter(Boolean),
@@ -932,7 +1115,6 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     replacements.to_date = filters.to_date
   }
 
-  // Keep summary cards aligned with same stoppage filters.
   let summaryWhereClause = 'WHERE 1=1'
   if (filters.machine_name) {
     summaryWhereClause += ' AND (device_id LIKE :machine_name OR model LIKE :machine_name)'
@@ -941,8 +1123,7 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     summaryWhereClause += ' AND start_time BETWEEN :from_date AND :to_date'
   }
 
-  // Updated query to calculate gap-based stoppage duration between consecutive records
-  const query = `
+  const baseCte = `
     WITH UniqueData AS (
       SELECT *,
              ROW_NUMBER() OVER (
@@ -974,97 +1155,36 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
              END AS stopped_duration
       FROM GapCalculated
     )
+  `
+
+  const dataQuery = `
+    ${baseCte}
     SELECT *
     FROM FinalData
-    WHERE prev_stop_time IS NOT NULL -- Follow user logic to ignore first record
+    WHERE prev_stop_time IS NOT NULL
     ORDER BY start_time DESC
     OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY;
   `
 
-  const countQuery = `
-    WITH UniqueData AS (
-      SELECT device_id, start_time, stop_time,
-             ROW_NUMBER() OVER (
-               PARTITION BY device_id, start_time, stop_time
-               ORDER BY start_time DESC
-             ) AS rn
-      FROM plc_data
-      ${whereClause}
-    ),
-    FilteredData AS (
-      SELECT *
-      FROM UniqueData
-      WHERE rn = 1
-    ),
-    GapCalculated AS (
-      SELECT *,
-             LAG(stop_time) OVER (
-               PARTITION BY device_id
-               ORDER BY start_time
-             ) AS prev_stop_time
-      FROM FilteredData
-    )
-    SELECT COUNT(*) as total
-    FROM GapCalculated
-    WHERE prev_stop_time IS NOT NULL;
-  `
-
-  const totalDowntimeQuery = `
-    WITH UniqueData AS (
-      SELECT device_id, start_time, stop_time,
-             ROW_NUMBER() OVER (
-               PARTITION BY device_id, start_time, stop_time
-               ORDER BY start_time DESC
-             ) AS rn
-      FROM plc_data
-      ${whereClause}
-    ),
-    FilteredData AS (
-      SELECT *
-      FROM UniqueData
-      WHERE rn = 1
-    ),
-    GapCalculated AS (
-      SELECT *,
-             LAG(stop_time) OVER (
-               PARTITION BY device_id
-               ORDER BY start_time
-             ) AS prev_stop_time
-      FROM FilteredData
-    ),
-    FinalData AS (
-      SELECT *,
-             CASE 
-               WHEN prev_stop_time IS NOT NULL AND DATEDIFF(SECOND, prev_stop_time, start_time) > 0 
-               THEN DATEDIFF(MINUTE, prev_stop_time, start_time) 
-               ELSE 0 
-             END AS stopped_duration
-      FROM GapCalculated
-    )
-    SELECT SUM(stopped_duration) as totalDowntime
+  const summaryQuery = `
+    ${baseCte}
+    SELECT COUNT(*) AS total, SUM(stopped_duration) AS totalDowntime
     FROM FinalData
     WHERE prev_stop_time IS NOT NULL;
   `
 
   const [
     data,
-    [countResult],
-    [totalDowntimeResult],
+    [summaryResult],
     [totalMachinesResult],
     [totalStoppedMachinesResult],
     allDevicesResult,
   ] = await Promise.all([
-    sequelize.query(query, {
-      replacements,
-      type: Sequelize.QueryTypes.SELECT,
-      model: PlcDataModel,
-      mapToModel: true,
-    }),
-    sequelize.query(countQuery, {
+    sequelize.query(dataQuery, {
       replacements,
       type: Sequelize.QueryTypes.SELECT,
     }),
-    sequelize.query(totalDowntimeQuery, {
+    sequelize.query(summaryQuery, {
       replacements,
       type: Sequelize.QueryTypes.SELECT,
     }),
@@ -1099,11 +1219,12 @@ export const getMachineStoppageService = async (filters = {}, pagination = {}) =
     ),
   ])
 
-  const total = countResult?.total || 0
-  const totalDowntime = totalDowntimeResult?.totalDowntime || 0
+  const total = summaryResult?.total || 0
+  const totalDowntime = summaryResult?.totalDowntime || 0
   const totalMachines = totalMachinesResult?.count || 0
   const totalStoppedMachines = totalStoppedMachinesResult?.count || 0
   const allDevices = allDevicesResult?.map((d) => d.device_id) || []
+
   await attachProductToPlcData(data)
 
   return {

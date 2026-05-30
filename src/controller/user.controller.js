@@ -11,6 +11,7 @@ import { StatusCodes } from "http-status-codes";
 import { config } from "../config.js";
 import { UserModel } from "../models/user.modal.js";
 import { SendMail } from "../helper/SendEmail.js";
+import { cacheDel, getOrSetJSON } from "../utils/redisCache.js";
 
 
 
@@ -33,45 +34,62 @@ export const registerUser = AsyncHandler(async (req, res) => {
     });
 });
 
+const getCookieOptions = (req) => {
+    const isHttps = req.protocol === "https" || req.get("x-forwarded-proto") === "https";
+
+    return {
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: "lax",
+        maxAge: 12 * 60 * 60 * 1000,
+    };
+};
+
 export const LoginUser = AsyncHandler(async (req, res) => {
     const { email, password } = req.body;
 
     const user = await FindUserByEmailOrUserId(email);
 
     if (!user) {
-        throw new NotFoundError("Invalid credentials", "LoginUser() method error 1")
+        throw new NotFoundError("Invalid credentials", "LoginUser() method error 1");
     }
-    if (user.terminate) {
-        throw new NotFoundError("User Terminated by Admin Please Contact to organization", "LoginUser() method error")
+    const isTerminated = user?.terminate === true || user?.terminate === 1 || user?.terminate === "1";
+
+    if (isTerminated) {
+        throw new NotFoundError(
+            "User Terminated by Admin Please Contact to organization",
+            "LoginUser() method error"
+        );
     }
 
     const isCorrect = await bcrypt.compare(password, user.password);
-
     if (!isCorrect) {
-        throw new NotFoundError("Invalid credentials", "LoginUser() method error 2")
+        throw new NotFoundError("Invalid credentials", "LoginUser() method error 2");
     }
 
-    const accessToken = jwt.sign({ email: user.email, id: user._id }, config.JWT_SECRET, { expiresIn: "30days" })
-    const refreshToken = jwt.sign({ email: user.email, id: user._id }, config.JWT_SECRET, { expiresIn: "31days" })
+    const accessToken = jwt.sign(
+        { email: user.email, id: user._id },
+        config.JWT_SECRET,
+        { expiresIn: "30days" }
+    );
+    const refreshToken = jwt.sign(
+        { email: user.email, id: user._id },
+        config.JWT_SECRET,
+        { expiresIn: "31days" }
+    );
 
-    res.cookie("AT", accessToken, {
-        httpOnly: true,        // Cookie not accessible via document.cookie
-        secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge: 12 * 60 * 60 * 1000, // Lifetime in milliseconds
-        sameSite: "strict",    // "strict" | "lax" | "none"
-    }).cookie("RT", refreshToken, {
-        httpOnly: true,        // Cookie not accessible via document.cookie
-        secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge: 12 * 60 * 60 * 1000, // Lifetime in milliseconds
-        sameSite: "strict",    // "strict" | "lax" | "none"
-    });
+    const cookieOptions = getCookieOptions(req);
+
+    res
+        .cookie("AT", accessToken, cookieOptions)
+        .cookie("RT", refreshToken, cookieOptions);
+
+    await user.update({ refresh_token: refreshToken });
+    await cacheDel(`user:profile:${user._id}`);
 
     res.status(StatusCodes.OK).json({
-        message: "User login Successfully"
+        message: "User login Successfully",
     });
-
-    await user.update({ refresh_token: refreshToken })
-
 });
 
 export const LogoutUser = AsyncHandler(async (req, res) => {
@@ -86,9 +104,12 @@ export const LogoutUser = AsyncHandler(async (req, res) => {
 });
 
 export const LogedInUser = AsyncHandler(async (req, res) => {
-    res.status(StatusCodes.OK).json({
-        user: req?.currentUser
-    })
+    const userId = req?.currentUser?._id;
+    const cacheKey = `user:profile:${req?.currentUser?._id}`;
+
+    const { data: user } = await getOrSetJSON(cacheKey, 30, async () => req.currentUser);
+
+    res.status(StatusCodes.OK).json({ user });
 });
 
 export const UpdateUser = AsyncHandler(async (req, res) => {
@@ -99,6 +120,8 @@ export const UpdateUser = AsyncHandler(async (req, res) => {
         throw new NotFoundError("User not found ", "UpdateUser() method error");
     };
 
+    await cacheDel(`user:profile:${id}`);
+
     res.status(StatusCodes.OK).json({
         message: "User updated successfully",
         user: result
@@ -106,38 +129,44 @@ export const UpdateUser = AsyncHandler(async (req, res) => {
 });
 
 export const RefreshToken = AsyncHandler(async (req, res) => {
-    const token = req?.cookies?.AT || req?.headers?.authorization?.split(" ")[1];
+    const token = req?.cookies?.RT;
 
     if (!token) {
-        throw new NotFoundError("Token is required field", "RefreshToken() method error")
-    };
+        throw new NotFoundError("Token is required field", "RefreshToken() method error");
+    }
+
     const payload = jwt.verify(token, config.JWT_SECRET);
     const user = await FindUserById(payload.id);
 
     if (!user) {
-        throw new NotFoundError("Invalid user Please try again...", "RefreshToken() method error")
+        throw new NotFoundError("Invalid user Please try again...", "RefreshToken() method error");
     }
 
-    const accessToken = jwt.sign({ email: user.email, id: user._id }, config.JWT_SECRET, { expiresIn: "30days" })
-    const refreshToken = jwt.sign({ email: user.email, id: user._id }, config.JWT_SECRET, { expiresIn: "31days" })
+    const accessToken = jwt.sign(
+        { email: user.email, id: user._id },
+        config.JWT_SECRET,
+        { expiresIn: "30days" }
+    );
+    const refreshToken = jwt.sign(
+        { email: user.email, id: user._id },
+        config.JWT_SECRET,
+        { expiresIn: "31days" }
+    );
 
-    res.cookie("AT", accessToken, {
-        httpOnly: true,        // Cookie not accessible via document.cookie
-        secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge:  60 * 60 * 1000, // Lifetime in milliseconds
-        sameSite: "strict",    // "strict" | "lax" | "none"
-    }).cookie("RT", refreshToken, {
-        httpOnly: true,        // Cookie not accessible via document.cookie
-        secure: config.NODE_ENV !== "development",          // Sent only over HTTPS
-        maxAge:  60 * 60 * 1000, // Lifetime in milliseconds
-        sameSite: "strict",    // "strict" | "lax" | "none"
-    });
+    const cookieOptions = getCookieOptions(req);
+
+    res
+        .cookie("AT", accessToken, cookieOptions)
+        .cookie("RT", refreshToken, cookieOptions);
+
+    await UserModel.update(
+        { refresh_token: refreshToken },
+        { where: { _id: user._id } }
+    );
 
     res.status(StatusCodes.OK).json({
-        message: "user logedin Successfully"
+        message: "user logedin Successfully",
     });
-
-    await UserModel.update({ refresh_token: refreshToken }, { where: { _id: user._id } })
 });
 
 export const GetAllemployees = AsyncHandler(async (req, res) => {

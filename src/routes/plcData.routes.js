@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createPlcData,
   getAllPlcData,
+  exportPlcData,
   getPlcReport,
   getMachineStoppage,
   downloadMachineStoppagePdf,
@@ -36,6 +37,7 @@ router.get("/report/download-pdf",   downloadPlcReportPdf);
 router.get("/report/download-excel", downloadPlcReportExcel);
 router.get("/report/options", getPlcReportOptions);
 router.get("/report", getPlcReport);
+router.get("/export", exportPlcData);
 router.get("/", getAllPlcData);
 router.get("/listing", getPlcListing);
 router.get("/:id", getPlcDataById);

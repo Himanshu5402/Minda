@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import { fileURLToPath } from "url";
 import path from "path";
 import { Server } from "socket.io";
+import { ensureRedisConnected } from "./config/redis.js";
 
 // ----------------- local imports ---------------------
 import { CheckDbConnection } from "./dbConnection.js";
@@ -22,6 +23,31 @@ import { startMachineHistoryWorker } from "./services/machineHistoryWorker.servi
 const SERVER_PORT = 9021;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const allowedOrigins = [
+    config.CLIENT_URL,
+    config.LOCAL_CLIENT_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+].filter(Boolean);
+
+const corsOptions = {
+    origin(origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+
+        callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+};
 
 // Export io instance for use in controllers
 let io;
@@ -41,11 +67,7 @@ function middlewares(app) {
     app.set('trust proxy', true)
     app.use(express.static(path.join(__dirname, 'pages')));
     app.use("/files", express.static(path.join(__dirname, "../public/temp")));
-    app.use(cors({
-        origin: config.NODE_ENV === "development" ? config.LOCAL_CLIENT_URL : config.CLIENT_URL,
-        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        credentials: true,
-    }));
+    app.use(cors(corsOptions));
     app.use(compression());
     app.use(cookieParser());
 }
@@ -74,6 +96,12 @@ function errorHandler(app) {
 
 async function Connections() {
     // Initialize database connections or other services here
+    const redis = await ensureRedisConnected();
+    if (redis) {
+        console.log("Redis Ready");
+    } else {
+        console.log("Redis unavailable — API will run without cache");
+    }
     await CheckDbConnection();
     startPlcDashboardWorker();
     startMachineHistoryWorker();
@@ -85,7 +113,14 @@ function StartServer(app) {
     // Initialize Socket.IO
     io = new Server(server, {
         cors: {
-            origin: config.NODE_ENV === "development" ? config.LOCAL_CLIENT_URL : config.CLIENT_URL,
+            origin(origin, callback) {
+                if (!origin || allowedOrigins.includes(origin)) {
+                    callback(null, true);
+                    return;
+                }
+
+                callback(new Error("Not allowed by Socket.IO CORS"));
+            },
             methods: ["GET", "POST"],
             credentials: true,
         },

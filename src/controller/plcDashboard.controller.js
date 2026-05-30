@@ -12,6 +12,8 @@ export const getPlcDashboard = AsyncHandler(async (req, res) => {
     status,
     company_name,
     plant_name,
+    page = 1,
+    limit = 6,
   } = req.query;
 
   const filters = {
@@ -21,11 +23,20 @@ export const getPlcDashboard = AsyncHandler(async (req, res) => {
     plant_name,
   };
 
-  const result = await getAllPlcDashboardService(filters);
+  const result = await getAllPlcDashboardService(filters, {
+    page: Number(page) || 1,
+    limit: Number(limit) || 6,
+  });
 
   res.status(StatusCodes.OK).json({
     message: "PLC Dashboard data fetched successfully",
-    data: result,
+    data: result?.rows || result || [],
+    pagination: result?.pagination || {
+      page: Number(page) || 1,
+      limit: Number(limit) || 6,
+      totalPages: 1,
+      totalItems: result?.rows?.length || 0,
+    },
   });
 });
 

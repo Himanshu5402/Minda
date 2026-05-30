@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs'
 import {
   createPlcDataService,
   getAllPlcDataService,
+  streamAllPlcDataService,
   getPlcDataByIdService,
   getAllPlcReport,
   updatePlcDataService,
@@ -20,9 +21,15 @@ import {
   getPlcReportOptionsService,
 } from '../services/plcData.service.js'
 import { io } from '../server.js'
+import { cacheDelByPrefix, getOrSetJSON } from '../utils/redisCache.js'
+
+const REPORT_CACHE_PREFIX = 'plc-report:'
+const REPORT_OPTIONS_CACHE_KEY = 'plc-report:options'
 
 export const createPlcData = AsyncHandler(async (req, res) => {
   const { data, isNewRecord } = await createPlcDataService(req.body)
+  await cacheDelByPrefix(REPORT_CACHE_PREFIX)
+  await cacheDelByPrefix(REPORT_OPTIONS_CACHE_KEY)
 
   if (isNewRecord && io) {
     console.log('[socket] emitting dataCreated for plcData')
@@ -191,6 +198,83 @@ export const getAllPlcData = AsyncHandler(async (req, res) => {
     message: 'PLC Data fetched successfully',
     data: result,
   })
+})
+
+export const exportPlcData = AsyncHandler(async (req, res) => {
+  const {
+    device_id,
+    model,
+    status,
+    company_name,
+    plant_name,
+    startDate,
+    endDate,
+    timestampStart,
+    timestampEnd,
+    stream,
+    format,
+    batchSize,
+  } = req.query
+
+  const filters = {}
+  if (device_id) filters.device_id = device_id
+  if (company_name) filters.company_name = company_name
+  if (plant_name) filters.plant_name = plant_name
+  if (model) filters.model = model
+  if (status) filters.status = status
+  if (timestampStart) filters.timestampStart = timestampStart
+  if (timestampEnd) filters.timestampEnd = timestampEnd
+  if (startDate && endDate) {
+    filters.startDate = startDate
+    filters.endDate = endDate
+  }
+
+  const exportFormat = format === 'csv' ? 'csv' : 'ndjson'
+  const useStream = String(stream || '') === 'true'
+
+  if (!useStream) {
+    const result = await getAllPlcDataService(filters)
+    return res.status(StatusCodes.OK).json({
+      message: 'PLC Data fetched successfully',
+      data: result,
+    })
+  }
+
+  res.setHeader('Content-Type', exportFormat === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson')
+  res.setHeader('Content-Disposition', `attachment; filename="plc-data-export.${exportFormat === 'csv' ? 'csv' : 'ndjson'}"`)
+  res.flushHeaders()
+
+  let sentHeader = false
+  let firstRow = true
+
+  const writeCsvRow = (row) => {
+    if (!sentHeader) {
+      const header = Object.keys(row).join(',')
+      res.write(`${header}\n`)
+      sentHeader = true
+    }
+    const line = Object.values(row)
+      .map((value) => {
+        if (value == null) return ''
+        const str = String(value)
+        const escaped = str.replace(/"/g, '""')
+        return `"${escaped}"`
+      })
+      .join(',')
+    res.write(`${line}\n`)
+  }
+
+  await streamAllPlcDataService(filters, { batchSize, attachProduct: true }, async (rows) => {
+    for (const row of rows) {
+      if (exportFormat === 'csv') {
+        writeCsvRow(row)
+      } else {
+        res.write(`${JSON.stringify(row)}\n`)
+      }
+    }
+  })
+
+  res.end()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -573,20 +657,131 @@ export const getPlcReport = AsyncHandler(async (req, res) => {
     filters.endTime = endTime
   }
 
-  const result = await getAllPlcReport(filters, { page, limit })
+  const cacheKey = `${REPORT_CACHE_PREFIX}${JSON.stringify({ filters, page, limit })}`
+
+  const { data: result, fromCache } = await getOrSetJSON(cacheKey, 120, async () => {
+    const report = await getAllPlcReport(filters, { page, limit })
+    return {
+      rows: report.data,
+      total: report.total,
+      page: report.page,
+      limit: report.limit,
+      totalPages: report.totalPages,
+      summary: report.summary,
+      productSummaries: report.productSummaries,
+    }
+  })
 
   res.status(StatusCodes.OK).json({
     message: 'PLC Report fetched successfully',
-    data: {
-      rows: result.data,
-      total: result.total,
-      page: result.page,
-      limit: result.limit,
-      totalPages: result.totalPages,
-      summary: result.summary,
-      productSummaries: result.productSummaries,
-    },
+    fromCache,
+    data: result,
   })
+})
+
+export const exportPlcReport = AsyncHandler(async (req, res) => {
+  const {
+    device_id,
+    model,
+    status,
+    company_name,
+    plant_name,
+    page = 1,
+    limit = 10,
+    duration,
+    startDate,
+    endDate,
+    startTime,
+    endTime,
+    timestampStart,
+    timestampEnd,
+    stream,
+    format,
+    batchSize,
+  } = req.query
+
+  const filters = {}
+  if (device_id) filters.device_id = device_id
+  if (company_name) filters.company_name = company_name
+  if (plant_name) filters.plant_name = plant_name
+  if (model) filters.model = model
+  if (status && status !== 'all') filters.status = status
+  if (timestampStart) filters.timestampStart = timestampStart
+  if (timestampEnd) filters.timestampEnd = timestampEnd
+  if (duration && duration !== 'all') {
+    filters.duration = duration
+    filters.startDate = startDate
+    filters.endDate = endDate
+    filters.startTime = startTime
+    filters.endTime = endTime
+  }
+
+  const useStream = String(stream || '').toLowerCase() === 'true'
+  const exportFormat = String(format || 'ndjson').toLowerCase() === 'csv' ? 'csv' : 'ndjson'
+
+  if (!useStream) {
+    const report = await getAllPlcReport(filters, { page, limit })
+    return res.status(StatusCodes.OK).json({
+      message: 'PLC Report fetched successfully',
+      data: {
+        rows: report.data,
+        total: report.total,
+        page: report.page,
+        limit: report.limit,
+        totalPages: report.totalPages,
+        summary: report.summary,
+        productSummaries: report.productSummaries,
+      },
+    })
+  }
+
+  res.setHeader('Content-Type', exportFormat === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson')
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="plc-report-export.${exportFormat === 'csv' ? 'csv' : 'ndjson'}"`,
+  )
+  res.flushHeaders()
+
+  let sentHeader = false
+
+  const writeCsvRow = (row) => {
+    if (!sentHeader) {
+      const header = Object.keys(row).join(',')
+      res.write(`${header}\n`)
+      sentHeader = true
+    }
+
+    const line = Object.values(row)
+      .map((value) => {
+        if (value == null) return ''
+        const str = String(value)
+        const escaped = str.replace(/"/g, '""')
+        return `"${escaped}"`
+      })
+      .join(',')
+
+    res.write(`${line}\n`)
+  }
+
+  const rowsWritten = await streamPlcReportService(
+    filters,
+    { batchSize },
+    async (rows) => {
+      for (const row of rows) {
+        if (exportFormat === 'csv') {
+          writeCsvRow(row)
+        } else {
+          res.write(`${JSON.stringify(row)}\n`)
+        }
+      }
+    },
+  )
+
+  if (!sentHeader && exportFormat === 'csv') {
+    res.write('No data available\n')
+  }
+
+  res.end()
 })
 
 export const getPlcDataById = AsyncHandler(async (req, res) => {
@@ -613,6 +808,8 @@ export const getPlcListing = async (req, res, next) => {
   }
 }
 export const updatePlcData = AsyncHandler(async (req, res) => {
+  await cacheDelByPrefix(REPORT_CACHE_PREFIX)
+  await cacheDelByPrefix(REPORT_OPTIONS_CACHE_KEY)
   const { data, isUpdated } = await updatePlcDataService(req.params.id, req.body)
 
   if (isUpdated && io) {
@@ -631,6 +828,8 @@ export const updatePlcData = AsyncHandler(async (req, res) => {
 })
 
 export const deletePlcData = AsyncHandler(async (req, res) => {
+  await cacheDelByPrefix(REPORT_CACHE_PREFIX)
+  await cacheDelByPrefix(REPORT_OPTIONS_CACHE_KEY)
   await deletePlcDataService(req.params.id)
   if (io) {
     console.log(`[socket] emitting dataUpdated(delete) for plcData id=${req.params.id}`)
@@ -680,9 +879,14 @@ export const getPlcDowntimeByMachine = AsyncHandler(async (req, res) => {
 })
 
 export const getPlcReportOptions = AsyncHandler(async (req, res) => {
-  const result = await getPlcReportOptionsService()
+  const cacheKey = 'plc-report:options'
+  const { data: result, fromCache } = await getOrSetJSON(cacheKey, 180, async () =>
+    getPlcReportOptionsService(),
+  )
+
   res.status(StatusCodes.OK).json({
     message: 'PLC Report Options fetched successfully',
+    fromCache,
     data: result,
   })
 })

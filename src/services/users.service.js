@@ -2,7 +2,7 @@ import { UserModel } from "../models/user.modal.js";
 import { CompanyModel } from "../models/company.modal.js";
 import { PlantModel } from "../models/plant.modal.js";
 import { RoleModel } from "../models/role.modal.js";
-import { Op } from "sequelize";
+import Sequelize, { Op } from "sequelize";
 import { DepartmentModel } from "../models/department.modal.js";
 import { TemplateMasterModel } from "../models/templateMaster.model.js";
 import { WorkflowModel } from "../models/workflow.modal.js";
@@ -86,8 +86,19 @@ export const DeleteUsersService = async (id) => {
 };
 
 export const FindUserByEmailOrUserId = async (email) => {
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
     const result = await UserModel.findOne({
-        where: { [Op.or]: [{ email }, { user_id: email }] },
+        where: {
+            [Op.or]: [
+                { email: normalizedEmail },
+                Sequelize.where(
+                    Sequelize.fn("LOWER", Sequelize.col("email")),
+                    normalizedEmail
+                ),
+                { user_id: email },
+            ],
+        },
     });
     return result;
 };
@@ -120,7 +131,19 @@ export const FindUserById = async (id) => {
 };
 
 export const FindUserByEmail = async (email) => {
-    const result = await UserModel.findOne({ where: { email } });
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    const result = await UserModel.findOne({
+        where: {
+            [Op.or]: [
+                { email: normalizedEmail },
+                Sequelize.where(
+                    Sequelize.fn("LOWER", Sequelize.col("email")),
+                    normalizedEmail
+                ),
+            ],
+        },
+    });
     return result;
 };
 

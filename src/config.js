@@ -18,21 +18,29 @@ class Config {
     EMAIL_PASSWORD;
     LOCAL_SERVER_URL;
     SERVER_URL;
+    REDIS_URL;
+    TIMELABS_BASE_URL;
+    TIMELABS_AUTH_KEY;
+    TIMELABS_ENCRYPTION_KEY;
     constructor() {
-        this.DB_HOST = process.env.DB_HOST;
-        this.DB_PORT = process.env.DB_PORT;
-        this.DB_NAME = process.env.DB_NAME;
-        this.DB_USER = process.env.DB_USER;
-        this.DB_PASSWORD = process.env.DB_PASSWORD;
-        this.DB_SYNC = process.env.DB_SYNC;
-        this.NODE_ENV = process.env.NODE_ENV;
-        this.LOCAL_CLIENT_URL = process.env.LOCAL_CLIENT_URL;
-        this.CLIENT_URL = process.env.CLIENT_URL;
-        this.JWT_SECRET = process.env.JWT_SECRET;
-        this.EMAIL_AUTH = process.env.EMAIL_AUTH;
-        this.EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
-        this.SERVER_URL = process.env.SERVER_URL;
-        this.LOCAL_SERVER_URL = process.env.LOCAL_SERVER_URL;
+        this.DB_HOST = process.env.DB_HOST?.trim();
+        this.DB_PORT = process.env.DB_PORT?.trim();
+        this.DB_NAME = process.env.DB_NAME?.trim();
+        this.DB_USER = process.env.DB_USER?.trim();
+        this.DB_PASSWORD = process.env.DB_PASSWORD?.trim();
+        this.DB_SYNC = process.env.DB_SYNC?.trim();
+        this.NODE_ENV = process.env.NODE_ENV?.trim();
+        this.LOCAL_CLIENT_URL = process.env.LOCAL_CLIENT_URL?.trim();
+        this.CLIENT_URL = process.env.CLIENT_URL?.trim();
+        this.JWT_SECRET = process.env.JWT_SECRET?.trim();
+        this.EMAIL_AUTH = process.env.EMAIL_AUTH?.trim();
+        this.EMAIL_PASSWORD = process.env.EMAIL_PASSWORD?.trim();
+        this.SERVER_URL = process.env.SERVER_URL?.trim();
+        this.LOCAL_SERVER_URL = process.env.LOCAL_SERVER_URL?.trim();
+        this.REDIS_URL = process.env.REDIS_URL?.trim();
+        this.TIMELABS_BASE_URL = process.env.TIMELABS_BASE_URL?.trim();
+        this.TIMELABS_AUTH_KEY = process.env.TIMELABS_AUTH_KEY?.trim();
+        this.TIMELABS_ENCRYPTION_KEY = process.env.TIMELABS_ENCRYPTION_KEY?.trim();
     }
 };
 
